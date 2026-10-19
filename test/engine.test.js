@@ -1,13 +1,29 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ANIMATIONS, EMPHASIS_ANIMATIONS, EXIT_ANIMATIONS, TRANSITIONS } from '../src/engine/animations.js'
-import { COMPOSITIONS, createLyric } from '../src/compositions/library.js'
+import { COMPOSITIONS, createLyric, TEMPLATES } from '../src/compositions/library.js'
 import { drawCompositionFrame } from '../src/engine/renderer.js'
 import { FORMATS, validateComposition } from '../src/engine/schema.js'
 import { arrangeEventsIntoLanes, calculateTimelineEdit } from '../src/engine/timeline-editing.js'
 
 test('the example compositions meet the supported schema', () => {
   for (const composition of COMPOSITIONS) assert.equal(validateComposition(composition), null)
+})
+
+test('the built-in composition and typography libraries contain distinct usable options', () => {
+  assert.ok(COMPOSITIONS.length >= 7)
+  assert.ok(TEMPLATES.length >= 13)
+  assert.equal(new Set(COMPOSITIONS.map(composition => composition.id)).size, COMPOSITIONS.length)
+  assert.equal(new Set(TEMPLATES.map(template => template.id)).size, TEMPLATES.length)
+  for (const template of TEMPLATES) {
+    assert.ok(ANIMATIONS[template.animation], `${template.name} references an unsupported animation`)
+    assert.match(template.color, /^#[\da-f]{6}$/i, `${template.name} needs a valid color`)
+  }
+  for (const composition of COMPOSITIONS) {
+    for (const event of composition.events) {
+      assert.ok(TEMPLATES.some(template => template.id === event.template), `${event.id} references a missing template`)
+    }
+  }
 })
 
 test('the animation registry includes all of the requested reusable motion families', () => {

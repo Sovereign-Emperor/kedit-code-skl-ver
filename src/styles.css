@@ -211,6 +211,16 @@ select, option, optgroup { color: var(--text); background-color: #16161b; }
 .swatch-kinetic span { transform: skew(-8deg); }
 .swatch-typewriter span { font-family: var(--mono); font-weight: 500; }
 .swatch-wipe span { border-bottom: 2px solid var(--gold); }
+.swatch-neon { background: radial-gradient(circle at 50% 45%, #35264e, #151218 74%); }
+.swatch-neon span { color: #ddcbff; text-shadow: 0 0 8px #b68aff, 0 0 20px #8659d4; }
+.swatch-parchment { background: radial-gradient(circle at 50% 40%, #383126, #171512 75%); }
+.swatch-parchment span { color: #ead9b6; font-family: Georgia, serif; font-weight: 600; }
+.swatch-ember { background: radial-gradient(circle at 50% 70%, #542b23, #171111 76%); }
+.swatch-ember span { color: #ffb28d; text-shadow: 0 0 14px #c35837a0; }
+.swatch-blueprint { background: linear-gradient(135deg, #172537, #11151b); }
+.swatch-blueprint span { color: #b8d6ff; font-family: var(--mono); font-size: 12px; }
+.swatch-velvet { background: radial-gradient(circle at 50% 40%, #342840, #151218 75%); }
+.swatch-velvet span { color: #e5d9f3; font-family: Georgia, serif; font-weight: 600; text-shadow: 0 0 12px #c49beb80; }
 
 .render-progress { padding: 9px 11px; border: 1px solid #3b3526; border-radius: 6px; background: #17150f; }
 .render-progress-top { display: flex; justify-content: space-between; color: #d7c69f; font: 9px var(--mono); }

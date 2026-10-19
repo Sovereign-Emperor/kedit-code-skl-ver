@@ -359,12 +359,22 @@ function App() {
   const chooseTemplate = id => {
     const template = TEMPLATES.find(item => item.id === id)
     if (template && selected && selectedId) {
-      updateEvent(selected.id, { template: template.id, animation: template.animation, entrance: template.animation, color: template.color, font: template.font, fontWeight: template.fontWeight, letterSpacing: template.letterSpacing })
+      updateEvent(selected.id, {
+        template: template.id, animation: template.animation, entrance: template.animation,
+        color: template.color, font: template.font, fontWeight: template.fontWeight, letterSpacing: template.letterSpacing,
+        ...(template.fontSize ? { fontSize: template.fontSize } : {}),
+        ...(template.emphasis ? { emphasis: template.emphasis } : {}),
+      })
       return
     }
     if (template && !selectedId) {
       const start = Math.min(time, Math.max(0, composition.duration - 0.5))
-      const event = { ...createLyric(start, Math.min(2.5, composition.duration - start)), template: template.id, animation: template.animation, entrance: template.animation, color: template.color, font: template.font, fontWeight: template.fontWeight, letterSpacing: template.letterSpacing }
+      const event = {
+        ...createLyric(start, Math.min(2.5, composition.duration - start)),
+        template: template.id, animation: template.animation, entrance: template.animation,
+        color: template.color, font: template.font, fontWeight: template.fontWeight, letterSpacing: template.letterSpacing,
+        fontSize: template.fontSize ?? 88, emphasis: template.emphasis ?? 'none',
+      }
       setComposition(current => ({ ...current, events: [...current.events, event] }))
       setSelectedId(event.id)
       setView('editor')

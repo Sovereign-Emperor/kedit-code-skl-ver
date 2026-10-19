@@ -6,6 +6,31 @@ const common = {
   background: '#09090f',
 }
 
+const lyric = (id, start, duration, text, animation, template, options = {}) => ({
+  id,
+  start,
+  duration,
+  text,
+  animation,
+  entrance: animation,
+  template,
+  transitionIn: 'cut',
+  transitionDuration: 0.45,
+  emphasis: 'none',
+  exit: 'fade',
+  highlight: [],
+  color: '#f5f0e7',
+  font: 'Arial',
+  fontWeight: 800,
+  letterSpacing: 0,
+  fontSize: 84,
+  x: 50,
+  position: 52,
+  motionDuration: 0.68,
+  align: 'center',
+  ...options,
+})
+
 export const COMPOSITIONS = [
   {
     ...common,
@@ -31,6 +56,80 @@ export const COMPOSITIONS = [
       { id: 'time-4', start: 10.5, duration: 3.5, text: 'THERE IS NO REWIND.', animation: 'split-text', template: 'minimal', highlight: ['NO'], color: '#f5f0e7', fontSize: 78, position: 53, align: 'center' },
     ],
   },
+  {
+    ...common,
+    id: 'midnight-resolve',
+    title: 'Midnight resolve',
+    duration: 20,
+    background: '#080a12',
+    events: [
+      lyric('midnight-1', 0.4, 2.8, 'WHEN THE WORLD GOES QUIET', 'blur-reveal', 'velvet', { highlight: ['QUIET'], position: 43 }),
+      lyric('midnight-2', 3.3, 3, 'YOUR PROMISES REMAIN', 'tracking-reveal', 'editorial', { highlight: ['PROMISES'], color: '#d9d6e2', position: 54, transitionIn: 'dissolve' }),
+      lyric('midnight-3', 6.8, 3.4, 'KEEP SHOWING UP', 'word-by-word', 'minimal', { highlight: ['SHOWING'], fontSize: 96, position: 48, transitionIn: 'wipe-left' }),
+      lyric('midnight-4', 10.7, 3.8, 'ESPECIALLY WHEN IT IS HARD', 'fade', 'parchment', { highlight: ['HARD'], font: 'Georgia', fontWeight: 600, fontSize: 70, position: 54, transitionIn: 'dissolve' }),
+      lyric('midnight-5', 15, 3.5, 'THAT IS WHERE YOU BECOME', 'mask-reveal', 'cinematic', { position: 46, transitionIn: 'push-left' }),
+      lyric('midnight-6', 18.5, 1.5, 'UNBREAKABLE.', 'slam', 'ember', { highlight: ['UNBREAKABLE.'], fontSize: 102, emphasis: 'glow', position: 55, transitionIn: 'zoom-through' }),
+    ],
+  },
+  {
+    ...common,
+    id: 'rise-from-ashes',
+    title: 'Rise from ashes',
+    duration: 18,
+    background: '#10080b',
+    events: [
+      lyric('ashes-1', 0.2, 2.5, 'THEY COUNTED YOU OUT', 'glitch', 'signal', { color: '#eee7ed', highlight: ['OUT'], position: 45 }),
+      lyric('ashes-2', 2.7, 2.7, 'LET THEM WATCH', 'slam', 'ember', { color: '#ffe5dc', highlight: ['WATCH'], fontSize: 100, position: 55, transitionIn: 'glitch' }),
+      lyric('ashes-3', 5.4, 3, 'YOU BUILT IN THE DARK', 'split-text', 'blueprint', { color: '#d9e9ff', highlight: ['DARK'], position: 48, transitionIn: 'push-left' }),
+      lyric('ashes-4', 8.4, 3, 'YOU LEARNED TO ENDURE', 'character-by-character', 'kinetic', { highlight: ['ENDURE'], position: 53, transitionIn: 'wipe-right' }),
+      lyric('ashes-5', 11.4, 3, 'NOW RISE WITHOUT PERMISSION', 'punch-in', 'neon', { color: '#fff0f7', highlight: ['RISE'], fontSize: 80, emphasis: 'pulse', position: 48, transitionIn: 'zoom-through' }),
+      lyric('ashes-6', 14.6, 3, 'THE FIRE MADE YOU', 'zoom', 'gold', { highlight: ['FIRE'], fontSize: 94, position: 54, transitionIn: 'dissolve' }),
+    ],
+  },
+  {
+    ...common,
+    id: 'quiet-authority',
+    title: 'Quiet authority',
+    format: 'landscape',
+    duration: 16,
+    background: '#0b0b0d',
+    events: [
+      lyric('authority-1', 0.5, 3.2, 'NOT EVERY KING NEEDS A CROWN', 'fade', 'parchment', { font: 'Georgia', fontWeight: 600, fontSize: 74, highlight: ['CROWN'], position: 48 }),
+      lyric('authority-2', 4, 3, 'LET YOUR WORK SPEAK', 'tracking-reveal', 'editorial', { font: 'Georgia', fontSize: 86, highlight: ['WORK'], position: 54, transitionIn: 'dissolve' }),
+      lyric('authority-3', 7.5, 3, 'MOVE WITH INTENTION', 'mask-reveal', 'velvet', { fontSize: 88, highlight: ['INTENTION'], position: 46, transitionIn: 'wipe-left' }),
+      lyric('authority-4', 11.2, 4, 'LEAVE NO DOUBT.', 'punch-in', 'gold', { fontSize: 110, highlight: ['DOUBT.'], emphasis: 'glow', position: 53, transitionIn: 'zoom-through' }),
+    ],
+  },
+  {
+    ...common,
+    id: 'purple-reign',
+    title: 'Purple reign',
+    duration: 20,
+    background: '#0b0712',
+    events: [
+      lyric('reign-1', 0.4, 2.6, 'FOCUS IS A SUPERPOWER', 'typewriter', 'blueprint', { color: '#ded0ff', highlight: ['FOCUS'], position: 48 }),
+      lyric('reign-2', 3.4, 3, 'PROTECT YOUR ENERGY', 'blur-reveal', 'velvet', { color: '#f0e8ff', highlight: ['ENERGY'], position: 54, transitionIn: 'dissolve' }),
+      lyric('reign-3', 6.8, 3.2, 'BUILD BEYOND THEIR VISION', 'word-by-word', 'neon', { color: '#eadcff', highlight: ['BEYOND'], fontSize: 78, position: 46, transitionIn: 'wipe-right' }),
+      lyric('reign-4', 10.4, 3.3, 'YOUR STANDARD. YOUR RULES.', 'glitch', 'signal', { color: '#f2eaff', highlight: ['RULES.'], emphasis: 'glitch', position: 55, transitionIn: 'glitch' }),
+      lyric('reign-5', 14.2, 2.8, 'NO ONE CAN OUTWORK', 'slide', 'kinetic', { color: '#e7dbff', position: 48, transitionIn: 'push-left' }),
+      lyric('reign-6', 17.1, 2.5, 'THE UNDISCIPLINED.', 'slam', 'gold', { color: '#fff5dc', highlight: ['UNDISCIPLINED.'], fontSize: 90, position: 54, transitionIn: 'zoom-through' }),
+    ],
+  },
+  {
+    ...common,
+    id: 'one-more-rep',
+    title: 'One more rep',
+    format: 'square',
+    duration: 16,
+    background: '#0c0d0e',
+    events: [
+      lyric('rep-1', 0.3, 2.5, 'WHEN YOUR BODY SAYS STOP', 'typewriter', 'blueprint', { color: '#e5ebed', highlight: ['STOP'], position: 44 }),
+      lyric('rep-2', 3, 2.6, 'YOUR MIND SAYS', 'fade', 'minimal', { position: 52, transitionIn: 'dissolve' }),
+      lyric('rep-3', 5.8, 2.5, 'ONE MORE', 'punch-in', 'ember', { color: '#fff0df', highlight: ['MORE'], fontSize: 112, emphasis: 'pulse', position: 48, transitionIn: 'push-left' }),
+      lyric('rep-4', 8.8, 2.8, 'ONE MORE HOUR', 'word-by-word', 'kinetic', { highlight: ['HOUR'], position: 54, transitionIn: 'wipe-left' }),
+      lyric('rep-5', 12, 3.5, 'ONE MORE VERSION OF YOU.', 'slam', 'gold', { highlight: ['YOU.'], fontSize: 88, emphasis: 'glow', position: 48, transitionIn: 'zoom-through' }),
+    ],
+  },
 ]
 
 export const TEMPLATES = [
@@ -42,6 +141,11 @@ export const TEMPLATES = [
   { id: 'kinetic', name: 'Kinetic', animation: 'word-by-word', color: '#f5f0e7', font: 'Arial', fontWeight: 900, letterSpacing: 0, sample: 'KEEP MOVING', description: 'Rhythmic reveals' },
   { id: 'typewriter', name: 'Typewriter', animation: 'typewriter', color: '#f5f0e7', font: 'Courier New', fontWeight: 600, letterSpacing: 0, sample: 'WRITE IT', description: 'Character by character' },
   { id: 'wipe', name: 'Wipe', animation: 'directional-wipe', color: '#f5f0e7', font: 'Arial', fontWeight: 800, letterSpacing: 0, sample: 'A NEW ERA', description: 'Clean masked reveal' },
+  { id: 'neon', name: 'Neon pulse', animation: 'kinetic-emphasis', color: '#d9c8ff', font: 'Arial', fontWeight: 900, letterSpacing: 1, fontSize: 88, emphasis: 'glow', sample: 'OWN THE NIGHT', description: 'Violet glow & kinetic scale' },
+  { id: 'parchment', name: 'Parchment', animation: 'blur-reveal', color: '#e8d8b7', font: 'Georgia', fontWeight: 600, letterSpacing: 0, fontSize: 82, emphasis: 'none', sample: 'TIMELESS', description: 'Warm literary reveal' },
+  { id: 'ember', name: 'Ember', animation: 'slam', color: '#ffb28d', font: 'Arial', fontWeight: 900, letterSpacing: 0, fontSize: 100, emphasis: 'pulse', sample: 'RISE AGAIN', description: 'High-impact warm accent' },
+  { id: 'blueprint', name: 'Blueprint', animation: 'character-by-character', color: '#b8d6ff', font: 'Courier New', fontWeight: 700, letterSpacing: 1, fontSize: 78, emphasis: 'none', sample: 'MAKE A PLAN', description: 'Technical type-on build' },
+  { id: 'velvet', name: 'Velvet', animation: 'blur-reveal', color: '#e5d9f3', font: 'Georgia', fontWeight: 600, letterSpacing: 1, fontSize: 84, emphasis: 'glow', sample: 'QUIET POWER', description: 'Soft-focus elegance' },
 ]
 
 export function createLyric(start = 0, duration = 2.5) {

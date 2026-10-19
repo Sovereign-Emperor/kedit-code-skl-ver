@@ -1,6 +1,6 @@
 # KEDIT Studio
 
-KEDIT Studio is a code-friendly editor for manually timed lyric typography and motion graphics. Edit lyric cards directly in the app or edit a JavaScript composition in `src/compositions/library.js`; arrange exact timestamps, overlaps, colors, highlighted words, and reusable animation templates; then render a real H.264 MP4 with your soundtrack.
+KEDIT Studio is a code-friendly editor for manually timed lyric typography and motion graphics. Start from seven built-in example compositions or choose from 13 reusable typography templates, then edit lyric cards directly in the app or in `src/compositions/library.js`; arrange exact timestamps, overlaps, colors, highlighted words, and animations; then render a real H.264 MP4 with your soundtrack.
 
 Music is only a playback reference and export audio track. **There is no beat detection, waveform analysis, or audio-reactive animation.**
 
@@ -80,7 +80,9 @@ Motion controls let you choose entrance, emphasis, exit, and the transition into
 
 An event's `start` and `duration` are seconds from the start of the edit. Events may overlap. `animation` is a convenient alias for `entrance`; optional `emphasis`, `exit`, `transitionIn`, and `soundEffect` metadata let you describe the remaining motion/audio fields. Built-in examples can be switched from the sidebar or composition picker; use **Save to library** in the picker to keep named user compositions on this computer. Soundtrack and effect file paths in JavaScript are labels only: choose the actual local files in the editor. Sound effects must be uploaded again after reloading or importing a composition.
 
-The entrance, emphasis, exit, and transition registries are in [`src/engine/animations.js`](./src/engine/animations.js); reusable compositions and styles are in [`src/compositions/library.js`](./src/compositions/library.js); drawing and the timestamp-based preview clock are in [`src/engine/renderer.js`](./src/engine/renderer.js) and [`src/engine/timeline.js`](./src/engine/timeline.js). Add a preset to the registry and renderer to make it available in the editor.
+The seven example compositions explore discipline, time, late-night resolve, comeback energy, quiet authority, royal purple, and training motivation across vertical, landscape, and square canvases. The template gallery includes cinematic, minimal, editorial, gilded, signal, kinetic, typewriter, wipe, neon pulse, parchment, ember, blueprint, and velvet looks. Templates configure an event's type style and motion; every setting remains editable afterward.
+
+The entrance, emphasis, exit, and transition registries are in [`src/engine/animations.js`](./src/engine/animations.js); reusable compositions, typography templates, and styles are in [`src/compositions/library.js`](./src/compositions/library.js); drawing and the timestamp-based preview clock are in [`src/engine/renderer.js`](./src/engine/renderer.js) and [`src/engine/timeline.js`](./src/engine/timeline.js). Add a preset to the registry and renderer to make it available in the editor.
 
 ## Checks
 
