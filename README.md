@@ -18,6 +18,25 @@ Music is only a playback reference and export audio track. **There is no beat de
 
 `ffmpeg-static` installs a local FFmpeg binary with the npm dependencies. You do not need to install FFmpeg separately or add it to Windows PATH. The rendering API runs in the Vite development server, so start the app with `npm.cmd run dev` when exporting. MP4 export uses H.264 video and AAC audio, writes temporary image frames to your system temp folder, and removes those files after the export completes. Short lyric edits and 30 fps are a good fit for an 8 GB laptop.
 
+## Deploy to Vercel with an FFmpeg worker
+
+Vercel can host the Vite editor, but its static hosting does not run the local Vite render middleware. Deploy the editor to Vercel and run the FFmpeg API as a separate Node service on a host that supports a persistent process and temporary disk. The browser sends frames, audio, and effects directly to that worker; Vercel only proxies the small request that creates a render session. This avoids Vercel Function upload-size limits for soundtrack and frame data.
+
+1. Deploy this repository to Vercel using its Vite framework detection and the default `npm run build` command.
+2. Deploy the same repository to a Node service with `npm ci` as its build command and `npm run worker` as its start command. Use a Linux Node 20+ runtime so `ffmpeg-static` installs the matching FFmpeg binary; configure the platform health check to request `/health`.
+3. Generate a long random API key (for example, `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"`). Set the following variables on the worker:
+   - `RENDER_API_KEY`: the generated key.
+   - `RENDER_PUBLIC_URL`: the worker’s public HTTPS origin, without a path.
+   - `RENDER_ALLOWED_ORIGINS`: comma-separated exact HTTPS origins for the Vercel production and custom domains.
+4. Set these variables in the Vercel project’s production environment:
+   - `RENDER_WORKER_URL`: the same public HTTPS worker origin.
+   - `RENDER_API_KEY`: the same generated key. Keep this server-side; do not prefix it with `VITE_`.
+5. Redeploy both services after setting the variables. In the editor, export a short composition with a soundtrack and verify the download before using longer edits.
+
+**Important deployment constraints:** this is a personal-editor setup, not a public render service. Enable Vercel Deployment Protection (or add user authentication and rate limiting) so strangers cannot repeatedly start costly renders through the public start endpoint. The worker keeps active jobs in process memory and temporary files, so configure it as a single instance; scaling it horizontally or restarting it during a render will interrupt that job. For a public multi-user product, replace in-memory job state and local temporary storage with durable job coordination and object storage, plus account-level quotas. The worker expires abandoned jobs after two hours and removes completed output after download.
+
+For local development, no deployment variables are needed: `npm run dev` continues to use the Vite middleware on the same origin. The standalone `npm run worker` process is for the separately deployed render service.
+
 ## Make a lyric edit
 
 1. Choose **New composition** or open one of the example edits in the left sidebar.

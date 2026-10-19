@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -15,6 +15,7 @@ const jobs = new Map()
 function respond(response, status, body) {
   response.statusCode = status
   response.setHeader('Content-Type', 'application/json; charset=utf-8')
+  response.setHeader('Cache-Control', 'no-store')
   response.end(JSON.stringify(body))
 }
 
@@ -53,6 +54,18 @@ async function saveRequest(request, filepath, maxBytes) {
 function safeTitle(value) {
   const title = typeof value === 'string' ? value.replace(/[^a-z0-9 _-]/gi, '').trim().slice(0, 60) : ''
   return title || 'kedit-export'
+}
+
+function bearerToken(request) {
+  const match = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)
+  return match?.[1] ?? ''
+}
+
+function tokensMatch(actual, expected) {
+  if (typeof actual !== 'string' || typeof expected !== 'string') return false
+  const actualBytes = Buffer.from(actual)
+  const expectedBytes = Buffer.from(expected)
+  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes)
 }
 
 async function removeJob(id) {
@@ -136,13 +149,33 @@ function startEncoding(job) {
   })
 }
 
-export function createRenderApi(ffmpegPath) {
+export function createRenderApi(ffmpegPath, { apiKey, allowedOrigins = [], publicUrl } = {}) {
   if (!ffmpegPath) throw new Error('The ffmpeg-static binary is missing. Reinstall dependencies with npm install.')
   return (request, response, next) => {
     const url = new URL(request.url || '/', 'http://localhost')
     if (!url.pathname.startsWith('/api/render/')) return next()
+    const origin = request.headers.origin
+    if (origin && allowedOrigins.length) {
+      if (!allowedOrigins.includes(origin)) {
+        respond(response, 403, { error: 'This website is not allowed to access the render service.' })
+        return
+      }
+      response.setHeader('Access-Control-Allow-Origin', origin)
+      response.setHeader('Vary', 'Origin')
+      response.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+      response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+    }
+    if (request.method === 'OPTIONS') {
+      response.statusCode = 204
+      response.end()
+      return
+    }
     const handle = async () => {
       if (request.method === 'POST' && url.pathname === '/api/render/start') {
+        if (apiKey && !tokensMatch(bearerToken(request), apiKey)) {
+          respond(response, 401, { error: 'Render service authorization failed.' })
+          return
+        }
         const config = await readJson(request)
         const { fps, duration, width, height, hasAudio } = config
         const soundEffects = config.soundEffects ?? []
@@ -161,13 +194,21 @@ export function createRenderApi(ffmpegPath) {
         const job = {
           id, directory, ffmpegPath, fps, duration, width, height, hasAudio,
           soundEffects, uploadedEffects: new Set(),
+          accessToken: randomBytes(32).toString('base64url'),
           frameCount: Math.ceil(duration * fps), title: safeTitle(config.filename),
           nextFrame: 0, progress: 0, status: 'uploading', error: '', process: null,
         }
         jobs.set(id, job)
         const cleanupTimer = setTimeout(() => removeJob(id).catch(error => console.error('Stale render cleanup failed:', error)), 2 * 60 * 60 * 1000)
         cleanupTimer.unref?.()
-        respond(response, 201, { id, frames: job.frameCount })
+        const protocol = request.headers['x-forwarded-proto'] || 'http'
+        const host = request.headers.host || 'localhost'
+        respond(response, 201, {
+          id,
+          frames: job.frameCount,
+          accessToken: job.accessToken,
+          workerUrl: publicUrl || `${protocol}://${host}`,
+        })
         return
       }
 
@@ -176,6 +217,10 @@ export function createRenderApi(ffmpegPath) {
       const [, id, action, frameIndex, effectIndex] = match
       const job = jobs.get(id)
       if (!job) { respond(response, 404, { error: 'Render session expired or was already cleaned up. Start a new export.' }); return }
+      if (!tokensMatch(bearerToken(request), job.accessToken)) {
+        respond(response, 401, { error: 'Render session authorization failed. Start a new export.' })
+        return
+      }
 
       if (request.method === 'POST' && action === 'audio') {
         if (!job.hasAudio) { respond(response, 400, { error: 'This export was started without a soundtrack.' }); return }

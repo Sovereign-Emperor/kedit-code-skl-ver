@@ -12,6 +12,8 @@ const LIBRARY_KEY = 'kedit-studio-library-v1'
 const ACTIVE_LIBRARY_KEY = 'kedit-studio-active-library-v1'
 const formatTime = value => `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}.${String(Math.floor((value % 1) * 10))}`
 const clone = value => JSON.parse(JSON.stringify(value))
+const renderEndpoint = (job, action = '') => `${job.workerUrl}/api/render/${job.id}${action ? `/${action}` : ''}`
+const renderHeaders = job => ({ Authorization: `Bearer ${job.accessToken}` })
 
 function readSavedLibrary() {
   try {
@@ -96,6 +98,7 @@ function App() {
   const [notice, setNotice] = useState('')
   const [renderState, setRenderState] = useState({ status: 'idle', progress: 0, error: '' })
   const [readyExport, setReadyExport] = useState(null)
+  const [downloadingExport, setDownloadingExport] = useState(false)
   const [audioFile, setAudioFile] = useState(null)
   const [audioUrl, setAudioUrl] = useState('')
   const [soundEffects, setSoundEffects] = useState([])
@@ -213,7 +216,8 @@ function App() {
 
   useEffect(() => {
     if (readyExport) {
-      fetch(`/api/render/${readyExport.id}`, { method: 'DELETE' }).catch(error => console.error('Could not clean up the previous MP4:', error))
+      fetch(renderEndpoint(readyExport), { method: 'DELETE', headers: renderHeaders(readyExport) })
+        .catch(error => console.error('Could not clean up the previous MP4:', error))
     }
     setReadyExport(null)
     setRenderState(current => current.status === 'complete' ? { status: 'idle', progress: 0, error: '' } : current)
@@ -656,6 +660,7 @@ function App() {
     setRenderState({ status: 'rendering', progress: 0, error: '' })
     setNotice('Preparing frames for export…')
     let jobId
+    let renderJob
     let keepRenderedFile = false
     try {
       const start = await fetch('/api/render/start', {
@@ -672,8 +677,14 @@ function App() {
       const startData = await start.json()
       if (!start.ok) throw new Error(startData.error || 'The render server could not start.')
       jobId = startData.id
+      if (!jobId || !startData.accessToken || !startData.workerUrl) {
+        throw new Error('The render service returned an incomplete session. Check its deployment configuration.')
+      }
+      const workerUrl = new URL(startData.workerUrl)
+      if (!['http:', 'https:'].includes(workerUrl.protocol)) throw new Error('The render service returned an invalid URL.')
+      renderJob = { id: jobId, workerUrl: workerUrl.origin, accessToken: startData.accessToken }
       if (audioFile) {
-        const response = await fetch(`/api/render/${jobId}/audio`, { method: 'POST', body: audioFile })
+        const response = await fetch(renderEndpoint(renderJob, 'audio'), { method: 'POST', headers: renderHeaders(renderJob), body: audioFile })
         if (!response.ok) throw new Error((await response.json()).error || 'Audio upload failed.')
       }
       const renderEffects = soundEffects.flatMap(effect => {
@@ -681,7 +692,7 @@ function App() {
         return event ? [{ eventId: effect.eventId, file: effect.file }] : []
       })
       for (const [index, effect] of renderEffects.entries()) {
-        const response = await fetch(`/api/render/${jobId}/effect/${index}`, { method: 'POST', body: effect.file })
+        const response = await fetch(renderEndpoint(renderJob, `effect/${index}`), { method: 'POST', headers: renderHeaders(renderJob), body: effect.file })
         if (!response.ok) throw new Error((await response.json()).error || `Sound effect ${index + 1} upload failed.`)
       }
       const total = Math.ceil(composition.duration * fps)
@@ -692,26 +703,29 @@ function App() {
       for (let index = 0; index < total; index += 1) {
         drawCompositionFrame(renderCtx, composition, index / fps, { width: frame.width, height: frame.height })
         const jpeg = await new Promise((resolve, reject) => renderCanvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not encode an output frame.')), 'image/jpeg', 0.9))
-        const response = await fetch(`/api/render/${jobId}/frame/${index}`, { method: 'POST', body: jpeg })
+        const response = await fetch(renderEndpoint(renderJob, `frame/${index}`), { method: 'POST', headers: renderHeaders(renderJob), body: jpeg })
         if (!response.ok) throw new Error((await response.json()).error || `Frame ${index + 1} could not be uploaded.`)
         if (index % Math.max(1, Math.floor(fps / 2)) === 0 || index === total - 1) {
           setRenderState({ status: 'rendering', progress: Math.round((index + 1) / total * 78), error: '' })
         }
       }
-      const finish = await fetch(`/api/render/${jobId}/finish`, { method: 'POST' })
+      const finish = await fetch(renderEndpoint(renderJob, 'finish'), { method: 'POST', headers: renderHeaders(renderJob) })
       if (!finish.ok) throw new Error((await finish.json()).error || 'FFmpeg could not start encoding.')
       setRenderState({ status: 'encoding', progress: 80, error: '' })
       let job
       do {
         await new Promise(resolve => setTimeout(resolve, 800))
-        const response = await fetch(`/api/render/${jobId}/status`)
+        const response = await fetch(renderEndpoint(renderJob, 'status'), { headers: renderHeaders(renderJob) })
         job = await response.json()
         if (!response.ok) throw new Error(job.error || 'Could not check export progress.')
         setRenderState({ status: job.status, progress: Math.min(99, 80 + Math.round(job.progress * 0.19)), error: '' })
       } while (job.status === 'encoding')
       if (job.status !== 'complete') throw new Error(job.error || 'FFmpeg did not produce an MP4.')
       if (compositionRef.current !== composition) throw new Error('The composition changed during export. Render again to export the latest version.')
-      setReadyExport({ id: jobId, filename: `${composition.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'kedit-export'}.mp4` })
+      setReadyExport({
+        ...renderJob,
+        filename: `${composition.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'kedit-export'}.mp4`,
+      })
       keepRenderedFile = true
       setRenderState({ status: 'complete', progress: 100, error: '' })
       setNotice('MP4 is ready. Select Download MP4 to save it.')
@@ -719,7 +733,38 @@ function App() {
       setRenderState({ status: 'error', progress: 0, error: error.message })
       setNotice(error.message)
     } finally {
-      if (jobId && !keepRenderedFile) fetch(`/api/render/${jobId}`, { method: 'DELETE' }).catch(error => console.error('Could not clean up export files:', error))
+      if (renderJob && !keepRenderedFile) {
+        fetch(renderEndpoint(renderJob), { method: 'DELETE', headers: renderHeaders(renderJob) })
+          .catch(error => console.error('Could not clean up export files:', error))
+      }
+    }
+  }
+
+  const downloadMp4 = async () => {
+    if (!readyExport || downloadingExport) return
+    setDownloadingExport(true)
+    try {
+      const response = await fetch(renderEndpoint(readyExport, 'file'), { headers: renderHeaders(readyExport) })
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}))
+        throw new Error(result.error || 'The rendered MP4 could not be downloaded.')
+      }
+      const downloadUrl = URL.createObjectURL(await response.blob())
+      const anchor = document.createElement('a')
+      anchor.href = downloadUrl
+      anchor.download = readyExport.filename
+      document.body.append(anchor)
+      anchor.click()
+      anchor.remove()
+      setTimeout(() => URL.revokeObjectURL(downloadUrl), 60_000)
+      setReadyExport(null)
+      setRenderState(current => current.status === 'complete' ? { status: 'idle', progress: 0, error: '' } : current)
+      setNotice('MP4 download started.')
+    } catch (error) {
+      setRenderState({ status: 'error', progress: 0, error: error.message })
+      setNotice(error.message)
+    } finally {
+      setDownloadingExport(false)
     }
   }
 
@@ -777,14 +822,9 @@ function App() {
               </div>
               <button className="button-secondary hide-small" onClick={() => importRef.current?.click()}><Icon name="upload" size={15} /> Import</button>
             <button className="button-secondary hide-small" onClick={exportComposition}>Save JSON</button>
-            {readyExport ? <a className="button-primary" href={`/api/render/${readyExport.id}/file`} download={readyExport.filename} onClick={() => {
-              const exportId = readyExport.id
-              setNotice('MP4 download started.')
-              setTimeout(() => {
-                setReadyExport(current => current?.id === exportId ? null : current)
-                setRenderState(current => current.status === 'complete' ? { status: 'idle', progress: 0, error: '' } : current)
-              }, 3000)
-            }}><Icon name="export" size={16} />Download MP4</a>
+            {readyExport ? <button className="button-primary" onClick={downloadMp4} disabled={downloadingExport}>
+              <Icon name="export" size={16} />{downloadingExport ? 'Preparing download…' : 'Download MP4'}
+            </button>
               : <button className="button-primary" onClick={exportMp4} disabled={renderState.status === 'rendering' || renderState.status === 'encoding'}><Icon name="export" size={16} />{renderState.status === 'rendering' || renderState.status === 'encoding' ? 'Rendering…' : 'Export MP4'}</button>}
             <input ref={importRef} type="file" accept="application/json,.json" hidden onChange={event => { importComposition(event.target.files?.[0]); event.target.value = '' }} />
           </div>

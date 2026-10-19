@@ -1,11 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createServer } from 'node:http'
+import renderStartHandler from '../api/render/start.js'
 import { ANIMATIONS, EMPHASIS_ANIMATIONS, EXIT_ANIMATIONS, TRANSITIONS } from '../src/engine/animations.js'
 import { COMPOSITIONS, createLyric, TEMPLATES } from '../src/compositions/library.js'
 import { drawCompositionFrame } from '../src/engine/renderer.js'
 import { FORMATS, validateComposition } from '../src/engine/schema.js'
 import { arrangeEventsIntoLanes, calculateTimelineEdit } from '../src/engine/timeline-editing.js'
 import { getKeyframeValue, upsertKeyframe } from '../src/engine/keyframes.js'
+import { createRenderApi } from '../server/render-api.js'
 
 test('the example compositions meet the supported schema', () => {
   for (const composition of COMPOSITIONS) assert.equal(validateComposition(composition), null)
@@ -236,4 +239,111 @@ test('timeline lane arrangement separates overlaps and packs non-overlapping eve
     ['first', 'adjacent', 'later'],
     ['overlap'],
   ])
+})
+
+test('render sessions require a service key to start and an ephemeral job token afterward', async t => {
+  const renderApi = createRenderApi('ffmpeg-test-binary', {
+    apiKey: 'service-secret',
+    allowedOrigins: ['https://editor.example'],
+    publicUrl: 'https://render.example',
+  })
+  const server = createServer((request, response) => renderApi(request, response, () => {
+    response.statusCode = 404
+    response.end()
+  }))
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  t.after(() => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
+  const origin = `http://127.0.0.1:${server.address().port}`
+  const config = { fps: 24, duration: 0.5, width: 1080, height: 1920, hasAudio: false, soundEffects: [] }
+
+  const unauthorized = await fetch(`${origin}/api/render/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  assert.equal(unauthorized.status, 401)
+
+  const blockedOrigin = await fetch(`${origin}/api/render/start`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer service-secret', 'Content-Type': 'application/json', Origin: 'https://other.example' },
+    body: JSON.stringify(config),
+  })
+  assert.equal(blockedOrigin.status, 403)
+
+  const preflight = await fetch(`${origin}/api/render/start`, {
+    method: 'OPTIONS',
+    headers: { Origin: 'https://editor.example', 'Access-Control-Request-Method': 'POST' },
+  })
+  assert.equal(preflight.status, 204)
+  assert.equal(preflight.headers.get('access-control-allow-origin'), 'https://editor.example')
+
+  const started = await fetch(`${origin}/api/render/start`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer service-secret', 'Content-Type': 'application/json', Origin: 'https://editor.example' },
+    body: JSON.stringify(config),
+  })
+  assert.equal(started.status, 201)
+  assert.equal(started.headers.get('access-control-allow-origin'), 'https://editor.example')
+  const session = await started.json()
+  assert.equal(session.frames, 12)
+  assert.equal(session.workerUrl, 'https://render.example')
+  assert.ok(session.accessToken)
+
+  const missingToken = await fetch(`${origin}/api/render/${session.id}/status`)
+  assert.equal(missingToken.status, 401)
+  const status = await fetch(`${origin}/api/render/${session.id}/status`, {
+    headers: { Authorization: `Bearer ${session.accessToken}`, Origin: 'https://editor.example' },
+  })
+  assert.equal(status.status, 200)
+  assert.equal((await status.json()).status, 'uploading')
+
+  const removed = await fetch(`${origin}/api/render/${session.id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${session.accessToken}` },
+  })
+  assert.equal(removed.status, 204)
+})
+
+test('the Vercel start function keeps its worker key server-side and returns the worker URL', async () => {
+  const originalWorkerUrl = process.env.RENDER_WORKER_URL
+  const originalApiKey = process.env.RENDER_API_KEY
+  const originalFetch = globalThis.fetch
+  let forwarded
+  process.env.RENDER_WORKER_URL = 'https://render.example/'
+  process.env.RENDER_API_KEY = 'private-service-key'
+  globalThis.fetch = async (url, options) => {
+    forwarded = { url, options }
+    return new Response(JSON.stringify({ id: 'job-123', accessToken: 'job-token', frames: 12 }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  const response = {
+    headers: {},
+    setHeader(name, value) { this.headers[name] = value },
+    status(code) { this.statusCode = code; return this },
+    json(body) { this.body = body; return this },
+  }
+  try {
+    await renderStartHandler({ method: 'POST', body: { fps: 24 } }, response)
+    assert.equal(forwarded.url, 'https://render.example/api/render/start')
+    assert.equal(forwarded.options.headers.Authorization, 'Bearer private-service-key')
+    assert.deepEqual(JSON.parse(forwarded.options.body), { fps: 24 })
+    assert.deepEqual(response.body, {
+      id: 'job-123',
+      accessToken: 'job-token',
+      frames: 12,
+      workerUrl: 'https://render.example',
+    })
+    assert.equal(response.statusCode, 201)
+  } finally {
+    globalThis.fetch = originalFetch
+    if (originalWorkerUrl === undefined) delete process.env.RENDER_WORKER_URL
+    else process.env.RENDER_WORKER_URL = originalWorkerUrl
+    if (originalApiKey === undefined) delete process.env.RENDER_API_KEY
+    else process.env.RENDER_API_KEY = originalApiKey
+  }
 })
