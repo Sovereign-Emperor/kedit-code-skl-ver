@@ -18,6 +18,8 @@ Music is only a playback reference and export audio track. **There is no beat de
 
 `ffmpeg-static` installs a local FFmpeg binary with the npm dependencies. You do not need to install FFmpeg separately or add it to Windows PATH. The rendering API runs in the Vite development server, so start the app with `npm.cmd run dev` when exporting. MP4 export uses H.264 video and AAC audio, writes temporary image frames to your system temp folder, and removes those files after the export completes. Short lyric edits and 30 fps are a good fit for an 8 GB laptop.
 
+The package manifest explicitly approves lifecycle scripts for the exact locked `esbuild` and `ffmpeg-static` versions. Recent npm versions block dependency install scripts unless approved; those scripts are required to install the platform bundler and FFmpeg binary.
+
 ## Deploy to Vercel with an FFmpeg worker
 
 Vercel can host the Vite editor, but its static hosting does not run the local Vite render middleware. Deploy the editor to Vercel and run the FFmpeg API as a separate Node service on a host that supports a persistent process and temporary disk. The browser sends frames, audio, and effects directly to that worker; Vercel only proxies the small request that creates a render session. This avoids Vercel Function upload-size limits for soundtrack and frame data.
