@@ -1,3 +1,22 @@
-import {defineConfig} from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-export default defineConfig({plugins:[react()],base:'./'})
+import { createRequire } from 'node:module'
+import { createRenderApi } from './server/render-api.js'
+
+const require = createRequire(import.meta.url)
+const ffmpegPath = require('ffmpeg-static')
+
+export default defineConfig({
+  plugins: [
+    react(),
+    {
+      name: 'kedit-local-render-api',
+      configureServer(server) {
+        server.middlewares.use(createRenderApi(ffmpegPath))
+      },
+      configurePreviewServer(server) {
+        server.middlewares.use(createRenderApi(ffmpegPath))
+      },
+    },
+  ],
+})

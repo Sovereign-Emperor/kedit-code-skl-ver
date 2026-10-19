@@ -1,0 +1,27 @@
+export default {
+  id: 'my-lyrics',
+  title: 'My Lyrics',
+  format: 'vertical',
+  fps: 30,
+  duration: 20,
+  audio: '',
+  background: '#09090f',
+  events: [
+    {
+      id: 'line-1',
+      start: 0.75,
+      duration: 2.4,
+      text: 'EVERY EMPIRE STARTS SOMEWHERE',
+      highlight: ['EMPIRE'],
+      animation: 'slam',
+      template: 'cinematic',
+      color: '#f5f0e7',
+      font: 'Arial',
+      fontWeight: 800,
+      letterSpacing: 0,
+      fontSize: 88,
+      position: 52,
+      align: 'center',
+    },
+  ],
+}
