@@ -14,6 +14,11 @@ export default {
       text: 'EVERY EMPIRE STARTS SOMEWHERE',
       highlight: ['EMPIRE'],
       animation: 'slam',
+      entrance: 'slam',
+      emphasis: 'none',
+      exit: 'fade',
+      transitionIn: 'cut', // Transition from the previous lyric into this one.
+      transitionDuration: 0.45, // Transition length in seconds (0.05-2).
       template: 'cinematic',
       color: '#f5f0e7',
       font: 'Arial',

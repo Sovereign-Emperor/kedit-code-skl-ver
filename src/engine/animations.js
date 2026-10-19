@@ -39,5 +39,16 @@ export const EXIT_ANIMATIONS = {
   'glitch-out': 'Glitch out',
 }
 
+export const TRANSITIONS = {
+  cut: { label: 'Hard cut', movement: 'cut' },
+  dissolve: { label: 'Cross dissolve', movement: 'dissolve' },
+  'wipe-left': { label: 'Wipe from left', movement: 'wipe-left' },
+  'wipe-right': { label: 'Wipe from right', movement: 'wipe-right' },
+  'push-left': { label: 'Push left', movement: 'push-left' },
+  'push-right': { label: 'Push right', movement: 'push-right' },
+  'zoom-through': { label: 'Zoom through', movement: 'zoom-through' },
+  glitch: { label: 'Glitch cut', movement: 'glitch' },
+}
+
 export const resolveEase = name => gsap.parseEase(name) || gsap.parseEase('power2.out')
 import { gsap } from 'gsap'

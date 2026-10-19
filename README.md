@@ -31,9 +31,9 @@ The browser saves the current composition in local storage. Use **Save JSON** to
 
 ## Editing workspace
 
-The inspector is split into **Text**, **Motion**, **Style**, **Audio**, and **Project** tools so controls stay grouped by task. On narrow screens, use the compact tool dock to open these controls as a bottom sheet; use the composition picker in the header to switch edits. The timeline automatically separates overlapping lyrics into readable lanes and shows the music bed and event sound effects on their own tracks. Scroll the timeline horizontally to inspect longer edits.
+The inspector is split into **Text**, **Motion**, **Style**, **Audio**, and **Project** tools so controls stay grouped by task. On narrow screens, use the compact tool dock to open these controls as a bottom sheet; use the composition picker in the header to switch edits. Save named compositions to the local library from that picker; library edits autosave locally, and you can update, copy, delete, or export a JSON backup. The timeline automatically separates overlapping lyrics into readable lanes and shows the music bed and event sound effects on their own tracks. Drag a lyric block to move it, or drag either edge handle to trim its start or end; edits snap to the project frame rate. Scroll the timeline horizontally to inspect longer edits.
 
-Motion controls let you choose entrance, emphasis, and exit independently, then tune entrance speed. Style controls include reusable typography presets, font family and weight, highlighting, letter spacing, and horizontal/vertical placement. These settings work in preview and MP4 export.
+Motion controls let you choose entrance, emphasis, exit, and the transition into each lyric independently, then tune entrance and transition duration. Available transitions include dissolve, directional wipes, pushes, zoom-through, and glitch. Style controls include reusable typography presets, font family and weight, highlighting, letter spacing, and horizontal/vertical placement. These settings work in preview and MP4 export.
 
 ## Code-first compositions
 
@@ -59,6 +59,8 @@ Motion controls let you choose entrance, emphasis, and exit independently, then 
       entrance: 'slam',
       emphasis: 'pulse',
       exit: 'fade',
+      transitionIn: 'dissolve', // cut | dissolve | wipe-left | wipe-right | push-left | push-right | zoom-through | glitch
+      transitionDuration: 0.45,
       soundEffect: 'impact.wav',
       soundEffectGain: 0.8,
       template: 'cinematic',
@@ -76,9 +78,9 @@ Motion controls let you choose entrance, emphasis, and exit independently, then 
 }
 ```
 
-An event's `start` and `duration` are seconds from the start of the edit. Events may overlap. `animation` is a convenient alias for `entrance`; optional `emphasis`, `exit`, and `soundEffect` metadata let you describe the remaining motion/audio fields. After refreshing, select your new edit in the sidebar or composition picker. Soundtrack and effect file paths in JavaScript are labels only: choose the actual local files in the editor. Sound effects must be uploaded again after reloading or importing a composition.
+An event's `start` and `duration` are seconds from the start of the edit. Events may overlap. `animation` is a convenient alias for `entrance`; optional `emphasis`, `exit`, `transitionIn`, and `soundEffect` metadata let you describe the remaining motion/audio fields. Built-in examples can be switched from the sidebar or composition picker; use **Save to library** in the picker to keep named user compositions on this computer. Soundtrack and effect file paths in JavaScript are labels only: choose the actual local files in the editor. Sound effects must be uploaded again after reloading or importing a composition.
 
-The entrance, emphasis, and exit preset registries are in [`src/engine/animations.js`](./src/engine/animations.js); reusable compositions and styles are in [`src/compositions/library.js`](./src/compositions/library.js); drawing and the timestamp-based preview clock are in [`src/engine/renderer.js`](./src/engine/renderer.js) and [`src/engine/timeline.js`](./src/engine/timeline.js). Add a preset to the registry and renderer to make it available in the editor.
+The entrance, emphasis, exit, and transition registries are in [`src/engine/animations.js`](./src/engine/animations.js); reusable compositions and styles are in [`src/compositions/library.js`](./src/compositions/library.js); drawing and the timestamp-based preview clock are in [`src/engine/renderer.js`](./src/engine/renderer.js) and [`src/engine/timeline.js`](./src/engine/timeline.js). Add a preset to the registry and renderer to make it available in the editor.
 
 ## Checks
 

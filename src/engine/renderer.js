@@ -1,4 +1,4 @@
-import { ANIMATIONS, resolveEase } from './animations.js'
+import { ANIMATIONS, TRANSITIONS, resolveEase } from './animations.js'
 
 const clamp = value => Math.max(0, Math.min(1, value))
 const rgb = color => color
@@ -41,9 +41,19 @@ function drawStyledLine(ctx, line, x, y, highlight, baseColor, accent, tracking 
   }
 }
 
-function drawEvent(ctx, composition, event, time, width, height) {
+function drawEvent(ctx, composition, event, time, width, height, events, index) {
   const elapsed = time - event.start
-  if (elapsed < 0 || elapsed >= event.duration) return
+  const next = events[index + 1]
+  const nextTransition = next && TRANSITIONS[next.transitionIn || 'cut']
+  const nextDuration = next?.transitionDuration ?? 0.45
+  const outgoing = next && nextTransition && nextTransition.movement !== 'cut'
+    && next.start <= event.start + event.duration + 1 / composition.fps
+    && time >= next.start && time < next.start + nextDuration
+  const transition = TRANSITIONS[event.transitionIn || 'cut']
+  const transitionDuration = event.transitionDuration ?? 0.45
+  const incoming = transition && transition.movement !== 'cut'
+    && time >= event.start && time < event.start + transitionDuration
+  if (elapsed < 0 || (elapsed >= event.duration && !outgoing)) return
   const entranceName = event.entrance || event.animation
   const preset = Object.hasOwn(ANIMATIONS, entranceName) ? ANIMATIONS[entranceName] : ANIMATIONS.fade
   const progress = clamp(elapsed / Math.min(event.motionDuration ?? 0.68, event.duration * 0.38))
@@ -64,6 +74,24 @@ function drawEvent(ctx, composition, event, time, width, height) {
   let blur = 0
   let tracking = movement === 'tracking' ? (1 - entrance) * fontSize * 0.32 : 0
   let revealMode = ''
+  const transitionProgress = incoming ? clamp((time - event.start) / transitionDuration) : 1
+  const outgoingProgress = outgoing ? clamp((time - next.start) / nextDuration) : 0
+  const transitionMovement = incoming ? transition.movement : ''
+  const outgoingMovement = outgoing ? nextTransition.movement : ''
+  if (incoming) {
+    if (transitionMovement === 'dissolve' || transitionMovement === 'glitch') alpha *= transitionProgress
+    if (transitionMovement === 'push-left') xOffset += (1 - transitionProgress) * width * 0.18
+    if (transitionMovement === 'push-right') xOffset -= (1 - transitionProgress) * width * 0.18
+    if (transitionMovement === 'zoom-through') zoom *= 0.68 + transitionProgress * 0.32
+    if (transitionMovement === 'glitch' && transitionProgress < 0.8 && Math.floor(time * 30) % 2 === 0) xOffset += fontSize * 0.08
+  }
+  if (outgoing) {
+    alpha *= 1 - outgoingProgress
+    if (outgoingMovement === 'push-left') xOffset -= outgoingProgress * width * 0.18
+    if (outgoingMovement === 'push-right') xOffset += outgoingProgress * width * 0.18
+    if (outgoingMovement === 'zoom-through') zoom *= 1 + outgoingProgress * 0.35
+    if (outgoingMovement === 'glitch' && Math.floor(time * 30) % 2 === 0) xOffset -= fontSize * 0.08
+  }
   if (movement === 'zoom') zoom = 1.16 - entrance * 0.16
   if (movement === 'slam') { zoom = 1.85 - entrance * 0.85; yOffset = (1 - entrance) * -fontSize * 0.4 }
   if (movement === 'punch') zoom = 1.38 - entrance * 0.38
@@ -112,6 +140,12 @@ function drawEvent(ctx, composition, event, time, width, height) {
   if (revealMode === 'mask' || movement === 'split') {
     ctx.beginPath()
     ctx.rect(-width / 2, blockTop, width, blockHeight * reveal)
+    ctx.clip()
+  }
+  if (incoming && (transitionMovement === 'wipe-left' || transitionMovement === 'wipe-right')) {
+    ctx.beginPath()
+    const revealWidth = width * transitionProgress
+    ctx.rect(transitionMovement === 'wipe-left' ? -width / 2 : width / 2 - revealWidth, blockTop, revealWidth, blockHeight)
     ctx.clip()
   }
   if (movement === 'tracking' || movement === 'characters' || movement === 'typewriter') ctx.textAlign = 'center'
@@ -175,5 +209,6 @@ export function drawCompositionFrame(ctx, composition, time, dimensions) {
   ctx.fillStyle = vignette
   ctx.fillRect(0, 0, width, height)
 
-  for (const event of composition.events) drawEvent(ctx, composition, event, time, width, height)
+  const events = [...composition.events].sort((a, b) => a.start - b.start)
+  events.forEach((event, index) => drawEvent(ctx, composition, event, time, width, height, events, index))
 }

@@ -1,4 +1,4 @@
-import { ANIMATIONS, EMPHASIS_ANIMATIONS, EXIT_ANIMATIONS } from './animations.js'
+import { ANIMATIONS, EMPHASIS_ANIMATIONS, EXIT_ANIMATIONS, TRANSITIONS } from './animations.js'
 
 export const FORMATS = {
   vertical: { label: '9:16 · Vertical', width: 1080, height: 1920 },
@@ -29,6 +29,8 @@ export const validateComposition = (composition, options = {}) => {
         if (event.entrance && !Object.hasOwn(ANIMATIONS, event.entrance)) errors.push(`${prefix} has an unsupported entrance preset.`)
         if (event.emphasis && !Object.hasOwn(EMPHASIS_ANIMATIONS, event.emphasis)) errors.push(`${prefix} has an unsupported emphasis animation.`)
         if (event.exit && !Object.hasOwn(EXIT_ANIMATIONS, event.exit)) errors.push(`${prefix} has an unsupported exit animation.`)
+        if (event.transitionIn && !Object.hasOwn(TRANSITIONS, event.transitionIn)) errors.push(`${prefix} has an unsupported transition.`)
+        if (event.transitionDuration !== undefined && (!Number.isFinite(event.transitionDuration) || event.transitionDuration < 0.05 || event.transitionDuration > 2)) errors.push(`${prefix} transition duration must be between 0.05 and 2 seconds.`)
         if (event.highlight !== undefined && (!Array.isArray(event.highlight) || event.highlight.some(word => typeof word !== 'string'))) errors.push(`${prefix} highlights must be an array of words.`)
         if (!Number.isFinite(event.start) || event.start < 0 || event.start >= composition.duration) errors.push(`${prefix} start time must be within the composition.`)
         if (!Number.isFinite(event.duration) || event.duration < 0.15 || event.start + event.duration > composition.duration + 0.001) errors.push(`${prefix} duration must be at least 0.15 seconds and fit within the composition.`)

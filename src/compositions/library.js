@@ -52,6 +52,8 @@ export function createLyric(start = 0, duration = 2.5) {
     text: '',
     animation: 'slam',
     entrance: 'slam',
+    transitionIn: 'cut',
+    transitionDuration: 0.45,
     emphasis: 'none',
     exit: 'fade',
     template: 'cinematic',

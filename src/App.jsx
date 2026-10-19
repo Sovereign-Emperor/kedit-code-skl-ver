@@ -1,13 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createTimelineController } from './engine/timeline.js'
+import { arrangeEventsIntoLanes, calculateTimelineEdit } from './engine/timeline-editing.js'
 import { drawCompositionFrame } from './engine/renderer.js'
-import { ANIMATIONS, ANIMATION_CATEGORIES, EMPHASIS_ANIMATIONS, EXIT_ANIMATIONS } from './engine/animations.js'
+import { ANIMATIONS, ANIMATION_CATEGORIES, EMPHASIS_ANIMATIONS, EXIT_ANIMATIONS, TRANSITIONS } from './engine/animations.js'
 import { FORMATS, validateComposition } from './engine/schema.js'
 import { COMPOSITIONS, TEMPLATES, createLyric } from './compositions/library.js'
 
 const STORE_KEY = 'kedit-studio-composition-v1'
+const LIBRARY_KEY = 'kedit-studio-library-v1'
+const ACTIVE_LIBRARY_KEY = 'kedit-studio-active-library-v1'
 const formatTime = value => `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}.${String(Math.floor((value % 1) * 10))}`
 const clone = value => JSON.parse(JSON.stringify(value))
+
+function readSavedLibrary() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LIBRARY_KEY) || '[]')
+    if (!Array.isArray(saved)) throw new Error('Composition library must be a list.')
+    return saved.filter(item => {
+      const valid = item && typeof item.id === 'string' && typeof item.title === 'string' && !validateComposition(item.composition)
+      if (!valid) console.error('Ignoring an invalid saved library composition:', item?.title ?? item)
+      return valid
+    })
+  } catch (error) {
+    console.error('Saved composition library could not be loaded:', error)
+    return []
+  }
+}
 
 function Icon({ name, size = 18 }) {
   const paths = {
@@ -45,6 +63,15 @@ function CanvasPreview({ composition, time, onCanvas }) {
 }
 
 function App() {
+  const [savedCompositions, setSavedCompositions] = useState(readSavedLibrary)
+  const [activeLibraryId, setActiveLibraryId] = useState(() => {
+    try {
+      const storedId = localStorage.getItem(ACTIVE_LIBRARY_KEY) || ''
+      return savedCompositions.some(item => item.id === storedId) ? storedId : ''
+    }
+    catch (error) { console.error('Active composition could not be restored:', error); return '' }
+  })
+  const [saveDialog, setSaveDialog] = useState(null)
   const [composition, setComposition] = useState(() => {
     try {
       const stored = localStorage.getItem(STORE_KEY)
@@ -77,28 +104,46 @@ function App() {
   const importRef = useRef(null)
   const soundEffectsRef = useRef([])
   const soundEffectAudioRefs = useRef(new Map())
+  const timelineDragRef = useRef(null)
+  const timelineDragMovedRef = useRef(false)
   const playingRef = useRef(false)
   const previousTimeRef = useRef(0)
   const compositionRef = useRef(composition)
   compositionRef.current = composition
   const selected = composition.events.find(event => event.id === selectedId) ?? composition.events[0]
   const sortedEvents = useMemo(() => [...composition.events].sort((a, b) => a.start - b.start), [composition.events])
-  const lyricLanes = useMemo(() => {
-    const lanes = []
-    for (const event of sortedEvents) {
-      const lane = lanes.find(items => items.at(-1).start + items.at(-1).duration <= event.start)
-      if (lane) lane.push(event)
-      else lanes.push([event])
-    }
-    return lanes
-  }, [sortedEvents])
+  const lyricLanes = useMemo(() => arrangeEventsIntoLanes(sortedEvents), [sortedEvents])
   const issues = useMemo(() => validateComposition(composition, { returnErrors: true }), [composition])
   const fps = composition.fps
 
   useEffect(() => {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(composition)) }
-    catch (error) { console.error('Could not save composition locally:', error); setNotice('Local save failed. Export a backup JSON.') }
+    const timer = setTimeout(() => {
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(composition)) }
+      catch (error) { console.error('Could not save composition locally:', error); setNotice('Local save failed. Export a backup JSON.') }
+    }, 180)
+    return () => clearTimeout(timer)
   }, [composition])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LIBRARY_KEY, JSON.stringify(savedCompositions))
+      if (activeLibraryId) localStorage.setItem(ACTIVE_LIBRARY_KEY, activeLibraryId)
+      else localStorage.removeItem(ACTIVE_LIBRARY_KEY)
+    } catch (error) {
+      console.error('Could not save the composition library:', error)
+      setNotice('Composition library save failed. Export a JSON backup.')
+    }
+  }, [savedCompositions, activeLibraryId])
+
+  useEffect(() => {
+    if (!activeLibraryId) return
+    const timer = setTimeout(() => setSavedCompositions(current => {
+      const entry = current.find(item => item.id === activeLibraryId)
+      if (!entry || JSON.stringify(entry.composition) === JSON.stringify(composition)) return current
+      return current.map(item => item.id === activeLibraryId ? { ...item, title: composition.title, composition: clone(composition) } : item)
+    }), 180)
+    return () => clearTimeout(timer)
+  }, [composition, activeLibraryId])
 
   useEffect(() => {
     if (readyExport) {
@@ -113,6 +158,63 @@ function App() {
     ...current,
     events: current.events.map(event => event.id === id ? { ...event, ...patch } : event),
   }))
+
+  useEffect(() => {
+    const move = event => {
+      const drag = timelineDragRef.current
+      if (!drag || drag.pointerId !== event.pointerId) return
+      const deltaPixels = event.clientX - drag.clientX
+      if (Math.abs(deltaPixels) > 1) timelineDragMovedRef.current = true
+      if (!timelineDragMovedRef.current) return
+      const delta = deltaPixels / drag.width * composition.duration
+      const patch = calculateTimelineEdit(drag, drag.mode, delta, composition.duration, fps)
+      const nextStart = patch.start ?? drag.lastStart
+      const nextDuration = patch.duration ?? drag.lastDuration
+      if (nextStart === drag.lastStart && nextDuration === drag.lastDuration) return
+      drag.lastStart = nextStart
+      drag.lastDuration = nextDuration
+      setComposition(current => ({
+        ...current,
+        events: current.events.map(item => item.id === drag.eventId ? { ...item, ...patch } : item),
+      }))
+    }
+    const stop = event => {
+      if (!timelineDragRef.current || timelineDragRef.current.pointerId !== event.pointerId) return
+      timelineDragRef.current = null
+      if (timelineDragMovedRef.current) setTimeout(() => { timelineDragMovedRef.current = false }, 0)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+    }
+  }, [composition.duration, fps])
+
+  const onTimelinePointerDown = event => {
+    const block = event.target.closest('[data-timeline-event]')
+    if (!block || event.button !== 0) return
+    const item = composition.events.find(candidate => candidate.id === block.dataset.timelineEvent)
+    const track = block.closest('.track-lanes')
+    if (!item || !track) return
+    event.preventDefault()
+    setSelectedId(item.id)
+    const handle = event.target.closest('[data-trim]')
+    timelineDragMovedRef.current = false
+    timelineDragRef.current = {
+      eventId: item.id,
+      start: item.start,
+      duration: item.duration,
+      lastStart: item.start,
+      lastDuration: item.duration,
+      clientX: event.clientX,
+      width: track.getBoundingClientRect().width,
+      pointerId: event.pointerId,
+      mode: handle?.dataset.trim === 'left' ? 'trim-left' : handle?.dataset.trim === 'right' ? 'trim-right' : 'move',
+    }
+  }
 
   useEffect(() => {
     const controller = createTimelineController({
@@ -177,6 +279,28 @@ function App() {
     setInspectorTab('content')
     setView('editor')
   }
+  const saveComposition = (title, asCopy = false) => {
+    const name = title.trim()
+    if (!name) { setNotice('Enter a name for this composition.'); return }
+    const existing = !asCopy && savedCompositions.find(item => item.id === activeLibraryId)
+    const duplicateName = savedCompositions.find(item => item.title.toLowerCase() === name.toLowerCase() && item.id !== existing?.id)
+    if (duplicateName) { setNotice('A saved composition already uses that name. Choose a different name.'); return }
+    if (existing) {
+      const nextComposition = { ...composition, title: name }
+      setComposition(nextComposition)
+      setSavedCompositions(current => current.map(item => item.id === existing.id ? { ...item, title: name, composition: clone(nextComposition) } : item))
+      setNotice(`Saved “${name}”.`)
+    } else {
+      const id = `saved-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      const nextComposition = { ...composition, title: name }
+      setSavedCompositions(current => [...current, { id, title: name, composition: clone(nextComposition) }])
+      setComposition(nextComposition)
+      setActiveLibraryId(id)
+      setNotice(`Added “${name}” to your library.`)
+    }
+    setSaveDialog(null)
+    setCompositionPickerOpen(false)
+  }
   const removeEvent = id => {
     removeSoundEffect(id)
     setComposition(current => ({ ...current, events: current.events.filter(event => event.id !== id) }))
@@ -188,6 +312,7 @@ function App() {
     controllerRef.current?.pause()
     setComposition(clone(found))
     setSelectedId(found.events[0]?.id ?? null)
+    setActiveLibraryId('')
     clearSoundEffects()
     setAudioFile(null)
     setAudioUrl('')
@@ -196,12 +321,34 @@ function App() {
     setView('editor')
     setCompositionPickerOpen(false)
   }
+  const chooseSavedComposition = entry => {
+    if (validateComposition(entry.composition)) { setNotice('This saved composition is invalid. Export a JSON backup before removing it.'); return }
+    controllerRef.current?.pause()
+    setComposition(clone(entry.composition))
+    setSelectedId(entry.composition.events[0]?.id ?? null)
+    setActiveLibraryId(entry.id)
+    clearSoundEffects()
+    setAudioFile(null)
+    setAudioUrl('')
+    setTime(0)
+    setInspectorTab('content')
+    setView('editor')
+    setCompositionPickerOpen(false)
+  }
+  const deleteSavedComposition = id => {
+    const entry = savedCompositions.find(item => item.id === id)
+    if (!entry || !window.confirm(`Remove “${entry.title}” from your saved library? This cannot be undone.`)) return
+    setSavedCompositions(current => current.filter(item => item.id !== id))
+    if (activeLibraryId === id) setActiveLibraryId('')
+    setNotice(`Removed “${entry.title}” from the library.`)
+  }
   const newComposition = () => {
     const fresh = { id: `my-edit-${Date.now()}`, title: 'Untitled edit', format: 'vertical', fps: 30, duration: 20, audio: '', background: '#09090f', events: [] }
     controllerRef.current?.pause()
     clearSoundEffects()
     setComposition(fresh)
     setSelectedId(null)
+    setActiveLibraryId('')
     setAudioFile(null)
     setAudioUrl('')
     setTime(0)
@@ -285,9 +432,13 @@ function App() {
       const imported = JSON.parse(await file.text())
       const error = validateComposition(imported)
       if (error) throw error
+      controllerRef.current?.pause()
       clearSoundEffects()
       setComposition(imported)
       setSelectedId(imported.events[0]?.id ?? null)
+      setActiveLibraryId('')
+      setAudioFile(null)
+      setAudioUrl('')
       setTime(0)
       setNotice('Composition imported.')
     } catch (error) { setNotice(`Could not import composition: ${error.message}`) }
@@ -377,8 +528,17 @@ function App() {
         <button className={`nav-item ${view === 'editor' ? 'active' : ''}`} title="Editor" onClick={() => setView('editor')}><Icon name="layers" /> Editor</button>
         <button className={`nav-item ${view === 'templates' ? 'active' : ''}`} title="Motion templates" onClick={() => setView('templates')}><Icon name="spark" /> Templates</button>
         <div className="side-divider" />
-        <div className="workspace-label">COMPOSITIONS</div>
+        <div className="workspace-label">EXAMPLE COMPOSITIONS</div>
         <div className="project-list">{COMPOSITIONS.map(item => <button className={`project-item ${composition.id === item.id ? 'selected' : ''}`} key={item.id} onClick={() => chooseComposition(item.id)}><span className="project-dot" />{item.title}</button>)}</div>
+        {savedCompositions.length > 0 && <>
+          <div className="workspace-label saved-library-label">SAVED LIBRARY</div>
+          <div className="project-list sidebar-saved-list">{savedCompositions.map(item => <div className="sidebar-saved-item" key={item.id}>
+            <button className={`project-item ${activeLibraryId === item.id ? 'selected' : ''}`} onClick={() => chooseSavedComposition(item)}><span className="project-dot" />{item.title}</button>
+            <button className="saved-composition-delete" aria-label={`Remove ${item.title} from library`} title="Remove from library" onClick={() => deleteSavedComposition(item.id)}><Icon name="trash" size={13} /></button>
+          </div>)}</div>
+        </>}
+        <button className="new-project" onClick={() => activeLibraryId ? saveComposition(composition.title) : setSaveDialog({ copy: false, title: composition.title })}><Icon name="check" size={15} />{activeLibraryId ? 'Save changes' : 'Save to library'}</button>
+        <button className="new-project" onClick={() => setSaveDialog({ copy: true, title: `${composition.title} copy` })}><Icon name="plus" size={15} />Save as copy</button>
         <button className="new-project" onClick={newComposition}><Icon name="plus" size={16} /> New composition</button>
         <div className="sidebar-bottom"><span className="status-dot" /> All changes saved locally</div>
       </aside>
@@ -391,8 +551,19 @@ function App() {
               <Icon name="layers" size={15} /><span>{composition.title || 'Untitled edit'}</span><Icon name="right" size={13} />
             </button>
             {compositionPickerOpen && <div className="composition-picker">
-              <span className="eyebrow">YOUR COMPOSITIONS</span>
+              <span className="eyebrow">EXAMPLE COMPOSITIONS</span>
               {COMPOSITIONS.map(item => <button key={item.id} className={composition.id === item.id ? 'current' : ''} onClick={() => chooseComposition(item.id)}><span className="project-dot" />{item.title}</button>)}
+              <span className="eyebrow picker-section-label">SAVED LIBRARY · {savedCompositions.length}</span>
+              {savedCompositions.map(item => <div className={`saved-composition ${item.id === activeLibraryId ? 'current' : ''}`} key={item.id}>
+                <button className="saved-composition-open" onClick={() => chooseSavedComposition(item)}><span className="project-dot" />{item.title}</button>
+                <button className="saved-composition-delete" aria-label={`Remove ${item.title} from library`} title="Remove from library" onClick={() => deleteSavedComposition(item.id)}><Icon name="trash" size={14} /></button>
+              </div>)}
+              <button className="picker-action" onClick={() => {
+                if (activeLibraryId) saveComposition(composition.title)
+                else setSaveDialog({ copy: false, title: composition.title })
+              }}><Icon name="check" size={14} />{activeLibraryId ? 'Save changes' : 'Save to library'}</button>
+              <button className="picker-action" onClick={() => setSaveDialog({ copy: true, title: `${composition.title} copy` })}><Icon name="plus" size={14} />Save as a copy</button>
+              <button className="picker-action" onClick={exportComposition}><Icon name="export" size={14} />Export JSON backup</button>
               <button className="picker-new" onClick={newComposition}><Icon name="plus" size={14} /> New composition</button>
             </div>}
           </div>
@@ -482,12 +653,16 @@ function App() {
 
         <section className="timeline-panel">
           <div className="timeline-heading"><div><h2>Timeline</h2><span>{composition.events.length} events <i>·</i> {formatTime(composition.duration)}</span></div><div className="timeline-actions"><button className="tiny-button" onClick={() => update({ duration: Math.min(300, Math.round((composition.duration + 5) * 10) / 10) })}><Icon name="plus" size={14} /> 5 sec</button><button className="tiny-button" onClick={addEvent}><Icon name="plus" size={14} /> Add lyric</button></div></div>
-          <div className="timeline-scroller">
+          <div className="timeline-scroller" onPointerDown={onTimelinePointerDown}>
             <div className="ruler"><span className="ruler-label">00:00</span><div className="ruler-track">{Array.from({ length: Math.min(11, Math.floor(composition.duration / 2) + 1) }, (_, i) => <span key={i} style={{ left: `${(i * 2 / composition.duration) * 100}%` }}>{formatTime(i * 2)}</span>)}</div></div>
             {lyricLanes.map((lane, laneIndex) => <div className="timeline-track" key={`lyrics-${laneIndex}`}>
               <div className="track-label"><span className="track-badge">T</span><strong>LYRIC {laneIndex + 1}</strong></div>
               <div className="track-lanes">
-                {lane.map((event, index) => <button key={event.id} className={`timeline-event color-${index % 5} ${event.id === selectedId ? 'event-selected' : ''}`} style={{ left: `${event.start / composition.duration * 100}%`, width: `${Math.max(2, event.duration / composition.duration * 100)}%` }} title={`${formatTime(event.start)} · ${event.text}`} onClick={() => { setSelectedId(event.id); seek(event.start) }}><span className="event-time">{formatTime(event.start)}</span><strong>{event.text || 'New lyric'}</strong><small>{ANIMATIONS[event.entrance || event.animation]?.label ?? event.animation}</small></button>)}
+                {lane.map((event, index) => <TimelineEvent key={event.id} event={event} index={index} selected={event.id === selectedId} duration={composition.duration} onSelect={() => {
+                  if (timelineDragMovedRef.current) { timelineDragMovedRef.current = false; return }
+                  setSelectedId(event.id)
+                  seek(event.start)
+                }} />)}
                 <div className="playhead" style={{ left: `${time / composition.duration * 100}%` }}><i /></div>
               </div>
             </div>)}
@@ -506,6 +681,15 @@ function App() {
         </section>
         {notice && <div className="toast" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss"><Icon name="close" size={14} /></button></div>}
         {issues.length > 0 && <div className="validation-note" role="alert">{issues[0].message}</div>}
+        {saveDialog && <div className="save-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setSaveDialog(null) }}>
+          <form className="save-dialog" onSubmit={event => { event.preventDefault(); saveComposition(saveDialog.title, saveDialog.copy) }}>
+            <span className="eyebrow">{saveDialog.copy ? 'SAVE A COPY' : 'SAVE TO LIBRARY'}</span>
+            <h2>{saveDialog.copy ? 'Create a named copy' : 'Save this composition'}</h2>
+            <p>Keep this edit in your local composition library. You can reopen it from the project picker.</p>
+            <label className="field-label">COMPOSITION NAME<input autoFocus maxLength={80} required value={saveDialog.title} onChange={event => setSaveDialog(current => ({ ...current, title: event.target.value }))} /></label>
+            <div className="save-dialog-actions"><button type="button" className="button-secondary" onClick={() => setSaveDialog(null)}>Cancel</button><button type="submit" className="button-primary"><Icon name="check" size={15} />{saveDialog.copy ? 'Save copy' : 'Save composition'}</button></div>
+          </form>
+        </div>}
       </main>
     </div>
   )
@@ -513,6 +697,26 @@ function App() {
 
 function TemplateGallery({ onChoose }) {
   return <div className="template-gallery">{TEMPLATES.map(item => <button key={item.id} className="template-card" onClick={() => onChoose(item.id)}><div className={`template-swatch swatch-${item.id}`}><span>{item.sample}</span><i>{item.name}</i></div><strong>{item.name}</strong><span>{ANIMATIONS[item.animation].label} · {item.description}</span></button>)}</div>
+}
+
+function TimelineEvent({ event, index, selected, duration, onSelect }) {
+  const name = event.text || 'Untitled lyric'
+  const transition = TRANSITIONS[event.transitionIn || 'cut']
+  return <div
+    className={`timeline-event-block color-${index % 5} ${selected ? 'event-selected' : ''}`}
+    data-timeline-event={event.id}
+    data-transition={event.transitionIn || 'cut'}
+    style={{ left: `${event.start / duration * 100}%`, width: `${Math.max(2, event.duration / duration * 100)}%` }}
+    title={`${formatTime(event.start)} · ${name} · Drag to move, drag either edge to trim`}
+  >
+    <button className="timeline-event" onClick={onSelect} aria-label={`Select ${name}, starts at ${formatTime(event.start)}, duration ${event.duration} seconds`}>
+      <span className="event-time">{formatTime(event.start)} · {event.duration.toFixed(2)}s</span>
+      <strong>{name}</strong>
+      <small>{ANIMATIONS[event.entrance || event.animation]?.label ?? event.animation}{transition?.movement !== 'cut' ? ` · ${transition.label}` : ''}</small>
+    </button>
+    <button className="trim-handle trim-left" data-trim="left" aria-label={`Trim start of ${name}`} title="Drag to trim start" />
+    <button className="trim-handle trim-right" data-trim="right" aria-label={`Trim end of ${name}`} title="Drag to trim end" />
+  </div>
 }
 
 function Inspector({ composition, selected, selectedId, onUpdate, onUpdateEvent, onDelete, onAdd, onTemplate, onSoundEffect, onRemoveSoundEffect, soundEffectAvailable, activeTab, onTabChange, mobileOpen, onClose }) {
@@ -549,6 +753,9 @@ function Inspector({ composition, selected, selectedId, onUpdate, onUpdateEvent,
         <div className="tool-section-title"><span>ENTRANCE PRESET</span><small>Choose how the line arrives</small></div>
         <label className="field-label">ANIMATION<select value={selected.entrance || selected.animation} onChange={event => updateSelected({ animation: event.target.value, entrance: event.target.value })}>{ANIMATION_CATEGORIES.map(group => <optgroup key={group.label} label={group.label}>{group.items.map(id => <option key={id} value={id}>{ANIMATIONS[id].label}</option>)}</optgroup>)}</select></label>
         <label className="field-label">ENTRANCE SPEED <div className="range-field"><input type="range" min=".15" max="1.5" step=".05" value={selected.motionDuration ?? .68} onChange={event => updateSelected({ motionDuration: Number(event.target.value) })} /><span>{(selected.motionDuration ?? .68).toFixed(2)}s</span></div></label>
+        <div className="tool-section-title"><span>TRANSITION INTO THIS LYRIC</span><small>Blend or move from the preceding event</small></div>
+        <label className="field-label">TRANSITION PRESET<select value={selected.transitionIn || 'cut'} onChange={event => updateSelected({ transitionIn: event.target.value })}>{Object.entries(TRANSITIONS).map(([id, transition]) => <option key={id} value={id}>{transition.label}</option>)}</select></label>
+        {(selected.transitionIn || 'cut') !== 'cut' && <label className="field-label">TRANSITION DURATION <div className="range-field"><input type="range" min=".05" max="2" step=".05" value={selected.transitionDuration ?? .45} onChange={event => updateSelected({ transitionDuration: Number(event.target.value) })} /><span>{(selected.transitionDuration ?? .45).toFixed(2)}s</span></div></label>}
         <div className="tool-section-title"><span>ANIMATION STACK</span><small>Layer a subtle accent and exit</small></div>
         <div className="field-row"><label className="field-label">EMPHASIS<select value={selected.emphasis || 'none'} onChange={event => updateSelected({ emphasis: event.target.value })}>{Object.entries(EMPHASIS_ANIMATIONS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="field-label">EXIT<select value={selected.exit || 'fade'} onChange={event => updateSelected({ exit: event.target.value })}>{Object.entries(EXIT_ANIMATIONS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label></div>
         <p className="inspector-hint">Entrance, emphasis, and exit are independent, so you can combine presets into a custom motion stack.</p>

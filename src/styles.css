@@ -332,6 +332,46 @@ select, option, optgroup { color: var(--text); background-color: #16161b; }
 .audio-badge { border-color: #62557d; color: #bdaddd; }
 .effect-badge { border-color: #714b52; color: #d89fa5; }
 .inspector-backdrop { display: none; }
+.timeline-event-block { position: absolute; z-index: 1; top: 2px; height: 31px; min-width: 24px; touch-action: none; }
+.timeline-event-block.event-selected { z-index: 2; }
+.timeline-event-block .timeline-event { position: relative; inset: auto; width: 100%; height: 100%; touch-action: none; cursor: grab; user-select: none; }
+.timeline-event-block .timeline-event:active { cursor: grabbing; }
+.timeline-event-block.color-1 .timeline-event { border-color: #675b87; color: #e4daf8; background: linear-gradient(120deg, #2e2840, #201d29); }
+.timeline-event-block.color-2 .timeline-event { border-color: #536e5d; color: #deeee0; background: linear-gradient(120deg, #25332b, #1c2420); }
+.timeline-event-block.color-3 .timeline-event { border-color: #6f5359; color: #f0dfe2; background: linear-gradient(120deg, #38262b, #271d20); }
+.timeline-event-block.color-4 .timeline-event { border-color: #526b70; color: #dfedf0; background: linear-gradient(120deg, #253236, #1c2427); }
+.timeline-event-block.color-1 .event-time { color: #a599c2; }
+.timeline-event-block.color-2 .event-time { color: #91ae98; }
+.timeline-event-block.color-3 .event-time { color: #bf9299; }
+.timeline-event-block.color-4 .event-time { color: #8daeb4; }
+.timeline-event-block[data-transition="dissolve"] .timeline-event { border-left-color: #8d7cc8; }
+.timeline-event-block[data-transition^="wipe"] .timeline-event { border-left-color: #8b78cd; }
+.timeline-event-block[data-transition^="push"] .timeline-event { border-left-color: #7aa49a; }
+.timeline-event-block[data-transition="zoom-through"] .timeline-event { border-left-color: var(--gold-bright); }
+.timeline-event-block[data-transition="glitch"] .timeline-event { border-left-color: #d277a7; }
+.trim-handle { position: absolute; z-index: 3; top: 0; bottom: 0; width: 9px; padding: 0; border: 0; background: transparent; cursor: ew-resize; touch-action: none; }
+.trim-left { left: 0; }
+.trim-right { right: 0; }
+.trim-handle::after { position: absolute; top: 8px; bottom: 8px; left: 3px; width: 2px; border-radius: 2px; background: #e6d39f99; content: ''; }
+.trim-handle:hover::after, .event-selected .trim-handle::after { background: var(--gold-bright); }
+.composition-picker { max-height: min(80vh, 620px); overflow-y: auto; scrollbar-color: #39363e transparent; scrollbar-width: thin; }
+.picker-section-label { margin-top: 6px; padding: 9px 6px 5px; border-top: 1px solid var(--line-soft); }
+.saved-composition { display: flex; min-width: 0; align-items: center; border-radius: 5px; }
+.saved-composition.current, .saved-composition:hover { background: #242018; }
+.saved-composition-open { display: flex; min-width: 0; min-height: 36px; flex: 1; align-items: center; gap: 9px; overflow: hidden; padding: 0 8px; border: 0; color: #bcb8c2; background: transparent; cursor: pointer; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.saved-composition.current .saved-composition-open, .saved-composition-open:hover { color: #f0e4c9; }
+.saved-composition-delete { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 4px; color: #8a777a; background: transparent; cursor: pointer; }
+.saved-composition-delete:hover { color: #ed9b9f; background: #372124; }
+.composition-picker > button.picker-action { min-height: 34px; color: #bdb7c5; font-size: 10px; }
+.composition-picker > button.picker-action:hover { color: var(--gold-bright); background: #211d16; }
+.save-dialog-backdrop { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; padding: 18px; background: #000b; }
+.save-dialog { display: grid; width: min(420px, 100%); gap: 14px; padding: 22px; border: 1px solid #3a3740; border-radius: 12px; background: #111115; box-shadow: 0 24px 80px #000c; }
+.save-dialog h2 { margin: -7px 0 -8px; font-size: 17px; }
+.save-dialog > p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.save-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.timeline-event-block.event-selected .timeline-event { border-color: var(--gold-bright); }
+.timeline-event-block .trim-handle { opacity: .45; }
+.timeline-event-block:hover .trim-handle, .timeline-event-block.event-selected .trim-handle { opacity: 1; }
 
 @media (max-width: 1050px) {
   .breadcrumb { display: none; }

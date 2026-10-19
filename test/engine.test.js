@@ -1,9 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ANIMATIONS, EMPHASIS_ANIMATIONS, EXIT_ANIMATIONS } from '../src/engine/animations.js'
+import { ANIMATIONS, EMPHASIS_ANIMATIONS, EXIT_ANIMATIONS, TRANSITIONS } from '../src/engine/animations.js'
 import { COMPOSITIONS, createLyric } from '../src/compositions/library.js'
 import { drawCompositionFrame } from '../src/engine/renderer.js'
 import { FORMATS, validateComposition } from '../src/engine/schema.js'
+import { arrangeEventsIntoLanes, calculateTimelineEdit } from '../src/engine/timeline-editing.js'
 
 test('the example compositions meet the supported schema', () => {
   for (const composition of COMPOSITIONS) assert.equal(validateComposition(composition), null)
@@ -13,6 +14,10 @@ test('the animation registry includes all of the requested reusable motion famil
   for (const preset of ['fade', 'zoom', 'slam', 'punch-in', 'slide', 'bounce', 'blur-reveal', 'glitch', 'tracking-reveal', 'word-by-word', 'character-by-character', 'typewriter', 'mask-reveal', 'split-text', 'kinetic-emphasis', 'directional-wipe', 'rapid-cut']) {
     assert.ok(ANIMATIONS[preset], `Missing preset: ${preset}`)
   }
+})
+
+test('the transition registry exposes usable cuts, blends, wipes, pushes, zooms, and glitch transitions', () => {
+  assert.deepEqual(Object.keys(TRANSITIONS), ['cut', 'dissolve', 'wipe-left', 'wipe-right', 'push-left', 'push-right', 'zoom-through', 'glitch'])
 })
 
 test('supported output formats use the required pixel sizes', () => {
@@ -101,4 +106,52 @@ test('composition validation bounds custom horizontal placement and motion durat
   const messages = validateComposition(invalid, { returnErrors: true }).map(error => error.message)
   assert.ok(messages.some(message => /horizontal position/.test(message)))
   assert.ok(messages.some(message => /motion duration/.test(message)))
+})
+
+test('every transition preset renders overlapping outgoing and incoming lyric cards', () => {
+  let clipCount = 0
+  let drawCount = 0
+  const context = {
+    clearRect() {}, fillRect() {}, save() {}, restore() {}, translate() {}, scale() {}, beginPath() {}, rect() {}, clip() { clipCount += 1 },
+    fillText() { drawCount += 1 }, measureText(text) { return { width: text.length * 12 } },
+    createRadialGradient() { return { addColorStop() {} } },
+    createLinearGradient() { return { addColorStop() {} } },
+  }
+  for (const transition of Object.keys(TRANSITIONS)) {
+    drawCount = 0
+    const outgoing = { ...createLyric(0, 2), text: 'OUTGOING', transitionIn: 'cut' }
+    const incoming = { ...createLyric(1, 2), text: 'INCOMING', transitionIn: transition, transitionDuration: 0.5 }
+    drawCompositionFrame(context, { ...COMPOSITIONS[0], duration: 3, events: [outgoing, incoming] }, 1.25, FORMATS.vertical)
+    assert.ok(drawCount > 0, `${transition} did not render any text`)
+  }
+  assert.ok(clipCount >= 2, 'Wipe presets should clip the reveal area')
+})
+
+test('composition validation rejects unsupported transitions and invalid transition lengths', () => {
+  const invalid = structuredClone(COMPOSITIONS[0])
+  invalid.events[0].transitionIn = 'spin'
+  invalid.events[0].transitionDuration = 4
+  const messages = validateComposition(invalid, { returnErrors: true }).map(error => error.message)
+  assert.ok(messages.some(message => /unsupported transition/.test(message)))
+  assert.ok(messages.some(message => /transition duration/.test(message)))
+})
+
+test('timeline editing moves and trims events on frame boundaries within the composition', () => {
+  const event = { start: 1, duration: 2 }
+  assert.deepEqual(calculateTimelineEdit(event, 'move', 1.11, 10, 30), { start: 2.1 })
+  assert.deepEqual(calculateTimelineEdit(event, 'move', -5, 10, 30), { start: 0 })
+  assert.deepEqual(calculateTimelineEdit(event, 'trim-left', 0.5, 10, 30), { start: 1.5, duration: 1.5 })
+  assert.deepEqual(calculateTimelineEdit(event, 'trim-right', 0.5, 10, 30), { duration: 2.5 })
+  assert.deepEqual(calculateTimelineEdit(event, 'trim-right', 20, 10, 30), { duration: 9 })
+})
+
+test('timeline lane arrangement separates overlaps and packs non-overlapping events', () => {
+  const first = { id: 'first', start: 0, duration: 2 }
+  const overlap = { id: 'overlap', start: 1, duration: 2 }
+  const adjacent = { id: 'adjacent', start: 2, duration: 1 }
+  const later = { id: 'later', start: 3, duration: 1 }
+  assert.deepEqual(arrangeEventsIntoLanes([later, overlap, first, adjacent]).map(lane => lane.map(event => event.id)), [
+    ['first', 'adjacent', 'later'],
+    ['overlap'],
+  ])
 })
