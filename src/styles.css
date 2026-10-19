@@ -325,7 +325,6 @@ select, option, optgroup { color: var(--text); background-color: #16161b; }
 .playhead { top: -4px; }
 .playhead i { top: -1px; }
 .audio-clip { position: absolute; top: 3px; display: flex; height: 28px; align-items: center; overflow: hidden; padding: 0 8px; border: 1px solid #574c6d; border-radius: 4px; color: #cfc3e8; background: linear-gradient(90deg, #30283e, #201c2a); font-size: 9px; white-space: nowrap; }
-.audio-clip::before { position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 5px, #b99ce21a 5px 6px); content: ''; }
 .audio-clip span { position: relative; overflow: hidden; text-overflow: ellipsis; }
 .audio-clip.audio-loaded { border-color: #716043; color: #e5d5ad; background: linear-gradient(90deg, #322a1d, #221e17); }
 .effect-clip { position: absolute; top: 8px; z-index: 1; min-width: 20px; height: 21px; overflow: hidden; padding: 0 4px; border: 1px solid #7b5960; border-radius: 4px; color: #f0dfe2; background: #38262b; cursor: pointer; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
@@ -335,6 +334,7 @@ select, option, optgroup { color: var(--text); background-color: #16161b; }
 .inspector-backdrop { display: none; }
 
 @media (max-width: 1050px) {
+  .breadcrumb { display: none; }
   .sidebar { flex-basis: 56px; align-items: center; padding-right: 7px; padding-left: 7px; }
   .brand { margin: 0 0 30px; }
   .brand > span:last-child, .workspace-label { display: none; }

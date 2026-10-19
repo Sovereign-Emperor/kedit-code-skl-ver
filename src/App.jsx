@@ -174,6 +174,7 @@ function App() {
     const event = createLyric(start, Math.min(2.5, composition.duration - start))
     setComposition(current => ({ ...current, events: [...current.events, event] }))
     setSelectedId(event.id)
+    setInspectorTab('content')
     setView('editor')
   }
   const removeEvent = id => {
@@ -184,20 +185,27 @@ function App() {
   const chooseComposition = id => {
     const found = COMPOSITIONS.find(item => item.id === id)
     if (!found) return
+    controllerRef.current?.pause()
     setComposition(clone(found))
     setSelectedId(found.events[0]?.id ?? null)
     clearSoundEffects()
     setAudioFile(null)
     setAudioUrl('')
     setTime(0)
+    setInspectorTab('content')
     setView('editor')
     setCompositionPickerOpen(false)
   }
   const newComposition = () => {
     const fresh = { id: `my-edit-${Date.now()}`, title: 'Untitled edit', format: 'vertical', fps: 30, duration: 20, audio: '', background: '#09090f', events: [] }
+    controllerRef.current?.pause()
     clearSoundEffects()
     setComposition(fresh)
     setSelectedId(null)
+    setAudioFile(null)
+    setAudioUrl('')
+    setTime(0)
+    setInspectorTab('content')
     setView('editor')
     setCompositionPickerOpen(false)
   }
