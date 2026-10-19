@@ -61,7 +61,9 @@ export function createLyric(start = 0, duration = 2.5) {
     color: '#f5f0e7',
     font: 'Arial',
     fontSize: 88,
+    x: 50,
     position: 52,
+    motionDuration: 0.68,
     align: 'center',
   }
 }

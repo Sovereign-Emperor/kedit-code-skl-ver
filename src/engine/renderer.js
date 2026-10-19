@@ -46,7 +46,7 @@ function drawEvent(ctx, composition, event, time, width, height) {
   if (elapsed < 0 || elapsed >= event.duration) return
   const entranceName = event.entrance || event.animation
   const preset = Object.hasOwn(ANIMATIONS, entranceName) ? ANIMATIONS[entranceName] : ANIMATIONS.fade
-  const progress = clamp(elapsed / Math.min(0.68, event.duration * 0.38))
+  const progress = clamp(elapsed / Math.min(event.motionDuration ?? 0.68, event.duration * 0.38))
   const ease = resolveEase(preset.ease)
   const entrance = ease(progress)
   const exitWindow = Math.min(0.22, event.duration * 0.15)
@@ -93,7 +93,7 @@ function drawEvent(ctx, composition, event, time, width, height) {
 
   ctx.save()
   ctx.globalAlpha = clamp(alpha)
-  ctx.translate(width / 2 + xOffset, height * position / 100 + yOffset)
+  ctx.translate(width * (event.x ?? 50) / 100 + xOffset, height * position / 100 + yOffset)
   ctx.scale(zoom, zoom)
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
@@ -144,9 +144,11 @@ function drawEvent(ctx, composition, event, time, width, height) {
       }
     } else {
       ctx.textAlign = event.align
-      const startX = event.align === 'left' ? -width * 0.38 : width * 0.38
       const measure = ctx.measureText(visibleLine).width
-      drawStyledLine(ctx, visibleLine, event.align === 'left' ? startX : startX - measure, lineY + index * lineHeight, words, event.color, composition.accent || '#e5c268', event.letterSpacing || 0)
+      const startX = event.align === 'left'
+        ? (event.x === undefined ? -width * 0.38 : 0)
+        : (event.x === undefined ? width * 0.38 - measure : -measure)
+      drawStyledLine(ctx, visibleLine, startX, lineY + index * lineHeight, words, event.color, composition.accent || '#e5c268', event.letterSpacing || 0)
     }
     ctx.restore()
   })

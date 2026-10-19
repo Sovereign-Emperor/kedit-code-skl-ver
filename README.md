@@ -29,6 +29,12 @@ Music is only a playback reference and export audio track. **There is no beat de
 
 The browser saves the current composition in local storage. Use **Save JSON** to keep a portable backup or **Import** to restore one on this computer.
 
+## Editing workspace
+
+The inspector is split into **Text**, **Motion**, **Style**, **Audio**, and **Project** tools so controls stay grouped by task. On narrow screens, use the compact tool dock to open these controls as a bottom sheet; use the composition picker in the header to switch edits. The timeline automatically separates overlapping lyrics into readable lanes and shows the music bed and event sound effects on their own tracks. Scroll the timeline horizontally to inspect longer edits.
+
+Motion controls let you choose entrance, emphasis, and exit independently, then tune entrance speed. Style controls include reusable typography presets, font family and weight, highlighting, letter spacing, and horizontal/vertical placement. These settings work in preview and MP4 export.
+
 ## Code-first compositions
 
 `src/compositions/_template.js` is a ready-to-edit JavaScript composition. Edit its values, then import it in `src/compositions/library.js` and add it to `COMPOSITIONS` to show it in the sidebar:
@@ -61,14 +67,16 @@ The browser saves the current composition in local storage. Use **Save JSON** to
       fontWeight: 800,
       letterSpacing: 0,
       fontSize: 88,
-      position: 52,
+      x: 50, // Horizontal anchor: 0 = left edge, 50 = center, 100 = right edge.
+      position: 52, // Vertical anchor as a percentage of the canvas height.
+      motionDuration: 0.68, // Entrance travel time in seconds (0.05-3).
       align: 'center',
     },
   ],
 }
 ```
 
-An event's `start` and `duration` are seconds from the start of the edit. Events may overlap. `animation` is a convenient alias for `entrance`; optional `emphasis`, `exit`, and `soundEffect` metadata let you describe the remaining motion/audio fields. After refreshing, select your new edit in the sidebar. Soundtrack and effect file paths in JavaScript are labels only: choose the actual local files in the editor. Sound effects must be uploaded again after reloading or importing a composition.
+An event's `start` and `duration` are seconds from the start of the edit. Events may overlap. `animation` is a convenient alias for `entrance`; optional `emphasis`, `exit`, and `soundEffect` metadata let you describe the remaining motion/audio fields. After refreshing, select your new edit in the sidebar or composition picker. Soundtrack and effect file paths in JavaScript are labels only: choose the actual local files in the editor. Sound effects must be uploaded again after reloading or importing a composition.
 
 The entrance, emphasis, and exit preset registries are in [`src/engine/animations.js`](./src/engine/animations.js); reusable compositions and styles are in [`src/compositions/library.js`](./src/compositions/library.js); drawing and the timestamp-based preview clock are in [`src/engine/renderer.js`](./src/engine/renderer.js) and [`src/engine/timeline.js`](./src/engine/timeline.js). Add a preset to the registry and renderer to make it available in the editor.
 

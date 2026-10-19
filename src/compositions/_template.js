@@ -20,7 +20,9 @@ export default {
       fontWeight: 800,
       letterSpacing: 0,
       fontSize: 88,
+      x: 50, // Horizontal anchor: 0 = left edge, 50 = center, 100 = right edge.
       position: 52,
+      motionDuration: 0.68, // Entrance travel time in seconds (0.05-3).
       align: 'center',
     },
   ],

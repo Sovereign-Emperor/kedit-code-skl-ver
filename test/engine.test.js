@@ -66,7 +66,23 @@ test('new lyric cards clamp to the remaining edit duration', () => {
   const lyric = createLyric(17.5, 0.5)
   assert.equal(lyric.start, 17.5)
   assert.equal(lyric.duration, 0.5)
+  assert.equal(lyric.x, 50)
+  assert.equal(lyric.motionDuration, 0.68)
   assert.equal(validateComposition({ ...COMPOSITIONS[0], events: [lyric] }), null)
+})
+
+test('custom horizontal placement and entrance timing render at their configured values', () => {
+  const translations = []
+  const context = {
+    clearRect() {}, fillRect() {}, save() {}, restore() {}, scale() {}, beginPath() {}, rect() {}, clip() {},
+    translate(x, y) { translations.push([x, y]) },
+    fillText() {}, measureText(text) { return { width: text.length * 12 } },
+    createRadialGradient() { return { addColorStop() {} } },
+    createLinearGradient() { return { addColorStop() {} } },
+  }
+  const event = { ...createLyric(0), text: 'CUSTOM POSITION', animation: 'fade', x: 25, motionDuration: 0.2 }
+  drawCompositionFrame(context, { ...COMPOSITIONS[0], events: [event] }, 0.1, FORMATS.vertical)
+  assert.ok(translations.some(([x]) => x === 270))
 })
 
 test('composition validation rejects malformed highlight and effect gain data', () => {
@@ -76,4 +92,13 @@ test('composition validation rejects malformed highlight and effect gain data', 
   const messages = validateComposition(invalid, { returnErrors: true }).map(error => error.message)
   assert.ok(messages.some(message => /highlights must be an array/.test(message)))
   assert.ok(messages.some(message => /sound effect gain/.test(message)))
+})
+
+test('composition validation bounds custom horizontal placement and motion duration', () => {
+  const invalid = structuredClone(COMPOSITIONS[0])
+  invalid.events[0].x = 105
+  invalid.events[0].motionDuration = 4
+  const messages = validateComposition(invalid, { returnErrors: true }).map(error => error.message)
+  assert.ok(messages.some(message => /horizontal position/.test(message)))
+  assert.ok(messages.some(message => /motion duration/.test(message)))
 })
