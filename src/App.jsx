@@ -4,6 +4,7 @@ import { arrangeEventsIntoLanes, calculateTimelineEdit } from './engine/timeline
 import { drawCompositionFrame } from './engine/renderer.js'
 import { ANIMATIONS, ANIMATION_CATEGORIES, EMPHASIS_ANIMATIONS, EXIT_ANIMATIONS, TRANSITIONS } from './engine/animations.js'
 import { FORMATS, validateComposition } from './engine/schema.js'
+import { captureKeyframeValues, getKeyframeValue, KEYFRAME_EASES, KEYFRAME_PROPERTIES, upsertKeyframe } from './engine/keyframes.js'
 import { COMPOSITIONS, TEMPLATES, createLyric } from './compositions/library.js'
 
 const STORE_KEY = 'kedit-studio-composition-v1'
@@ -74,7 +75,8 @@ function App() {
     catch (error) { console.error('Active composition could not be restored:', error); return '' }
   })
   const [saveDialog, setSaveDialog] = useState(null)
-  const [composition, setComposition] = useState(() => {
+  const [markerDialog, setMarkerDialog] = useState(null)
+  const [composition, setCompositionState] = useState(() => {
     try {
       const stored = localStorage.getItem(STORE_KEY)
       if (!stored) return clone(COMPOSITIONS[0])
@@ -118,6 +120,10 @@ function App() {
   const playingRef = useRef(false)
   const previousTimeRef = useRef(0)
   const compositionRef = useRef(composition)
+  const undoStackRef = useRef([])
+  const redoStackRef = useRef([])
+  const historyGroupRef = useRef(null)
+  const historyGroupTimeRef = useRef(0)
   compositionRef.current = composition
   timeRef.current = time
   const selected = composition.events.find(event => event.id === selectedId) ?? composition.events[0]
@@ -125,6 +131,56 @@ function App() {
   const lyricLanes = useMemo(() => arrangeEventsIntoLanes(sortedEvents), [sortedEvents])
   const issues = useMemo(() => validateComposition(composition, { returnErrors: true }), [composition])
   const fps = composition.fps
+
+  const setComposition = (nextValue, historyGroup = null) => {
+    const previous = compositionRef.current
+    const next = typeof nextValue === 'function' ? nextValue(previous) : nextValue
+    if (next === previous || JSON.stringify(next) === JSON.stringify(previous)) return
+    const groupContinues = historyGroup && historyGroupRef.current === historyGroup
+      && (historyGroup.startsWith('timeline:') || Date.now() - historyGroupTimeRef.current < 600)
+    if (!groupContinues) {
+      undoStackRef.current.push(previous)
+      if (undoStackRef.current.length > 100) undoStackRef.current.shift()
+      redoStackRef.current = []
+    }
+    historyGroupRef.current = historyGroup
+    historyGroupTimeRef.current = Date.now()
+    compositionRef.current = next
+    setCompositionState(next)
+  }
+
+  const clearHistory = () => {
+    undoStackRef.current = []
+    redoStackRef.current = []
+    historyGroupRef.current = null
+    historyGroupTimeRef.current = 0
+  }
+
+  const replaceComposition = nextComposition => {
+    clearHistory()
+    compositionRef.current = nextComposition
+    setCompositionState(nextComposition)
+  }
+
+  const undo = () => {
+    const previous = undoStackRef.current.pop()
+    if (!previous) return
+    redoStackRef.current.push(compositionRef.current)
+    historyGroupRef.current = null
+    historyGroupTimeRef.current = 0
+    compositionRef.current = previous
+    setCompositionState(previous)
+  }
+
+  const redo = () => {
+    const next = redoStackRef.current.pop()
+    if (!next) return
+    undoStackRef.current.push(compositionRef.current)
+    historyGroupRef.current = null
+    historyGroupTimeRef.current = 0
+    compositionRef.current = next
+    setCompositionState(next)
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -163,11 +219,22 @@ function App() {
     setRenderState(current => current.status === 'complete' ? { status: 'idle', progress: 0, error: '' } : current)
   }, [composition])
 
-  const update = useCallback((patch) => setComposition(current => ({ ...current, ...patch })), [])
+  const update = useCallback((patch) => setComposition(current => ({
+    ...current,
+    ...patch,
+    ...(patch.duration !== undefined && current.markers
+      ? { markers: current.markers.filter(marker => marker.time <= patch.duration) }
+      : {}),
+  })), [])
   const updateEvent = (id, patch) => setComposition(current => ({
     ...current,
-    events: current.events.map(event => event.id === id ? { ...event, ...patch } : event),
-  }))
+    events: current.events.map(event => {
+      if (event.id !== id) return event
+      const updated = { ...event, ...patch }
+      if (patch.duration !== undefined && updated.keyframes) updated.keyframes = updated.keyframes.filter(keyframe => keyframe.time <= updated.duration)
+      return updated
+    }),
+  }), `event:${id}:${Object.keys(patch).sort().join(',')}`)
 
   useEffect(() => {
     const move = event => {
@@ -185,12 +252,26 @@ function App() {
       drag.lastDuration = nextDuration
       setComposition(current => ({
         ...current,
-        events: current.events.map(item => item.id === drag.eventId ? { ...item, ...patch } : item),
-      }))
+        events: current.events.map(item => {
+          if (item.id !== drag.eventId) return item
+          const updated = { ...item, ...patch }
+          if (drag.mode === 'trim-left' && drag.keyframes) {
+            const offset = (patch.start ?? drag.start) - drag.start
+            updated.keyframes = drag.keyframes
+              .filter(keyframe => keyframe.time >= offset && keyframe.time <= offset + (patch.duration ?? drag.duration))
+              .map(keyframe => ({ ...keyframe, time: keyframe.time - offset }))
+          } else if (drag.mode === 'trim-right' && drag.keyframes) {
+            updated.keyframes = drag.keyframes.filter(keyframe => keyframe.time <= (patch.duration ?? drag.duration))
+          }
+          return updated
+        }),
+      }), `timeline:${drag.eventId}:${drag.mode}`)
     }
     const stop = event => {
       if (!timelineDragRef.current || timelineDragRef.current.pointerId !== event.pointerId) return
       timelineDragRef.current = null
+      historyGroupRef.current = null
+      historyGroupTimeRef.current = 0
       if (timelineDragMovedRef.current) setTimeout(() => { timelineDragMovedRef.current = false }, 0)
     }
     window.addEventListener('pointermove', move)
@@ -217,6 +298,7 @@ function App() {
       eventId: item.id,
       start: item.start,
       duration: item.duration,
+      keyframes: item.keyframes ? clone(item.keyframes) : undefined,
       lastStart: item.start,
       lastDuration: item.duration,
       clientX: event.clientX,
@@ -317,7 +399,7 @@ function App() {
   useEffect(() => {
     if (!previewOnly) return undefined
     const onKeyDown = event => {
-      if (event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (event.target instanceof HTMLElement && event.target.closest('input:not([type="range"]), textarea, select, [contenteditable="true"]')) return
       if (event.code === 'Space') {
         event.preventDefault()
         controllerRef.current?.toggle().catch(error => setNotice(`Playback error: ${error.message}`))
@@ -351,6 +433,24 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [previewOnly, closePreviewOnly, togglePreviewFullscreen])
 
+  useEffect(() => {
+    const onKeyDown = event => {
+      if (previewOnly) return
+      if (event.target instanceof HTMLElement && event.target.closest('input:not([type="range"]), textarea, select, [contenteditable="true"]')) return
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+      if (event.key.toLowerCase() === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) redo()
+        else undo()
+      } else if (event.key.toLowerCase() === 'y') {
+        event.preventDefault()
+        redo()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [previewOnly])
+
   const addEvent = () => {
     const start = Math.min(Math.max(0, time), Math.max(0, composition.duration - 0.5))
     const event = createLyric(start, Math.min(2.5, composition.duration - start))
@@ -359,6 +459,19 @@ function App() {
     setInspectorTab('content')
     setView('editor')
   }
+  const addMarker = () => {
+    if ((composition.markers || []).length >= 200) { setNotice('A composition can have up to 200 timeline markers.'); return }
+    setMarkerDialog({ label: `Marker ${(composition.markers || []).length + 1}`, time: Math.round(time * fps) / fps })
+  }
+  const saveMarker = label => {
+    const name = label.trim().slice(0, 40)
+    if (!name) { setNotice('Enter a name for the timeline marker.'); return }
+    const marker = { id: `marker-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, label: name, time: markerDialog.time }
+    setComposition(current => ({ ...current, markers: [...(current.markers || []), marker].sort((a, b) => a.time - b.time) }))
+    setNotice(`Added marker “${name}” at ${formatTime(marker.time)}.`)
+    setMarkerDialog(null)
+  }
+  const removeMarker = id => setComposition(current => ({ ...current, markers: (current.markers || []).filter(marker => marker.id !== id) }))
   const saveComposition = (title, asCopy = false) => {
     const name = title.trim()
     if (!name) { setNotice('Enter a name for this composition.'); return }
@@ -390,7 +503,7 @@ function App() {
     const found = COMPOSITIONS.find(item => item.id === id)
     if (!found) return
     controllerRef.current?.pause()
-    setComposition(clone(found))
+    replaceComposition(clone(found))
     setSelectedId(found.events[0]?.id ?? null)
     setActiveLibraryId('')
     clearSoundEffects()
@@ -404,7 +517,7 @@ function App() {
   const chooseSavedComposition = entry => {
     if (validateComposition(entry.composition)) { setNotice('This saved composition is invalid. Export a JSON backup before removing it.'); return }
     controllerRef.current?.pause()
-    setComposition(clone(entry.composition))
+    replaceComposition(clone(entry.composition))
     setSelectedId(entry.composition.events[0]?.id ?? null)
     setActiveLibraryId(entry.id)
     clearSoundEffects()
@@ -426,7 +539,7 @@ function App() {
     const fresh = { id: `my-edit-${Date.now()}`, title: 'Untitled edit', format: 'vertical', fps: 30, duration: 20, audio: '', background: '#09090f', events: [] }
     controllerRef.current?.pause()
     clearSoundEffects()
-    setComposition(fresh)
+    replaceComposition(fresh)
     setSelectedId(null)
     setActiveLibraryId('')
     setAudioFile(null)
@@ -524,7 +637,7 @@ function App() {
       if (error) throw error
       controllerRef.current?.pause()
       clearSoundEffects()
-      setComposition(imported)
+      replaceComposition(imported)
       setSelectedId(imported.events[0]?.id ?? null)
       setActiveLibraryId('')
       setAudioFile(null)
@@ -658,7 +771,11 @@ function App() {
             </div>}
           </div>
           <div className="top-actions">
-            <button className="button-secondary hide-small" onClick={() => importRef.current?.click()}><Icon name="upload" size={15} /> Import</button>
+              <div className="history-actions" aria-label="Edit history">
+                <button className="button-secondary history-button" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!undoStackRef.current.length} onClick={undo}>↶</button>
+                <button className="button-secondary history-button" aria-label="Redo" title="Redo (Ctrl+Y)" disabled={!redoStackRef.current.length} onClick={redo}>↷</button>
+              </div>
+              <button className="button-secondary hide-small" onClick={() => importRef.current?.click()}><Icon name="upload" size={15} /> Import</button>
             <button className="button-secondary hide-small" onClick={exportComposition}>Save JSON</button>
             {readyExport ? <a className="button-primary" href={`/api/render/${readyExport.id}/file`} download={readyExport.filename} onClick={() => {
               const exportId = readyExport.id
@@ -737,6 +854,7 @@ function App() {
             soundEffectAvailable={selected ? soundEffects.some(item => item.eventId === selected.id) : false}
             onSeek={seek}
             time={time}
+            fps={fps}
             activeTab={inspectorTab}
             onTabChange={setInspectorTab}
             mobileOpen={mobileInspectorOpen}
@@ -746,9 +864,9 @@ function App() {
         </div>
 
         <section className="timeline-panel">
-          <div className="timeline-heading"><div><h2>Timeline</h2><span>{composition.events.length} events <i>·</i> {formatTime(composition.duration)}</span></div><div className="timeline-actions"><button className="tiny-button" onClick={() => update({ duration: Math.min(300, Math.round((composition.duration + 5) * 10) / 10) })}><Icon name="plus" size={14} /> 5 sec</button><button className="tiny-button" onClick={addEvent}><Icon name="plus" size={14} /> Add lyric</button></div></div>
+          <div className="timeline-heading"><div><h2>Timeline</h2><span>{composition.events.length} events <i>·</i> {formatTime(composition.duration)} <i>·</i> {(composition.markers || []).length} markers</span></div><div className="timeline-actions"><button className="tiny-button" onClick={addMarker}><Icon name="frame" size={13} /> Marker</button><button className="tiny-button" onClick={() => update({ duration: Math.min(300, Math.round((composition.duration + 5) * 10) / 10) })}><Icon name="plus" size={14} /> 5 sec</button><button className="tiny-button" onClick={addEvent}><Icon name="plus" size={14} /> Add lyric</button></div></div>
           <div className="timeline-scroller" onPointerDown={onTimelinePointerDown}>
-            <div className="ruler"><span className="ruler-label">00:00</span><div className="ruler-track">{Array.from({ length: Math.min(11, Math.floor(composition.duration / 2) + 1) }, (_, i) => <span key={i} style={{ left: `${(i * 2 / composition.duration) * 100}%` }}>{formatTime(i * 2)}</span>)}</div></div>
+            <div className="ruler"><span className="ruler-label">00:00</span><div className="ruler-track">{Array.from({ length: Math.min(11, Math.floor(composition.duration / 2) + 1) }, (_, i) => <span key={i} style={{ left: `${(i * 2 / composition.duration) * 100}%` }}>{formatTime(i * 2)}</span>)}{(composition.markers || []).map(marker => <div className="timeline-marker" key={marker.id} style={{ left: `${marker.time / composition.duration * 100}%` }}><button className="timeline-marker-jump" title={`${marker.label} · ${formatTime(marker.time)}`} aria-label={`Jump to marker ${marker.label} at ${formatTime(marker.time)}`} onClick={() => seek(marker.time)}><i /><span>{marker.label}</span></button><button className="timeline-marker-remove" aria-label={`Remove marker ${marker.label}`} title="Remove marker" onClick={() => removeMarker(marker.id)}>×</button></div>)}</div></div>
             {lyricLanes.map((lane, laneIndex) => <div className="timeline-track" key={`lyrics-${laneIndex}`}>
               <div className="track-label"><span className="track-badge">T</span><strong>LYRIC {laneIndex + 1}</strong></div>
               <div className="track-lanes">
@@ -782,6 +900,15 @@ function App() {
             <p>Keep this edit in your local composition library. You can reopen it from the project picker.</p>
             <label className="field-label">COMPOSITION NAME<input autoFocus maxLength={80} required value={saveDialog.title} onChange={event => setSaveDialog(current => ({ ...current, title: event.target.value }))} /></label>
             <div className="save-dialog-actions"><button type="button" className="button-secondary" onClick={() => setSaveDialog(null)}>Cancel</button><button type="submit" className="button-primary"><Icon name="check" size={15} />{saveDialog.copy ? 'Save copy' : 'Save composition'}</button></div>
+          </form>
+        </div>}
+        {markerDialog && <div className="save-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMarkerDialog(null) }}>
+          <form className="save-dialog marker-dialog" onSubmit={event => { event.preventDefault(); saveMarker(markerDialog.label) }}>
+            <span className="eyebrow">TIMELINE MARKER · {formatTime(markerDialog.time)}</span>
+            <h2>Name this marker</h2>
+            <p>Markers help you remember moments in the soundtrack. They do not change playback or detect beats.</p>
+            <label className="field-label">MARKER NAME<input autoFocus maxLength={40} required value={markerDialog.label} onChange={event => setMarkerDialog(current => ({ ...current, label: event.target.value }))} /></label>
+            <div className="save-dialog-actions"><button type="button" className="button-secondary" onClick={() => setMarkerDialog(null)}>Cancel</button><button type="submit" className="button-primary"><Icon name="check" size={15} />Add marker</button></div>
           </form>
         </div>}
       </main>
@@ -851,9 +978,35 @@ function TimelineEvent({ event, index, selected, duration, onSelect }) {
   </div>
 }
 
-function Inspector({ composition, selected, selectedId, onUpdate, onUpdateEvent, onDelete, onAdd, onTemplate, onSoundEffect, onRemoveSoundEffect, soundEffectAvailable, activeTab, onTabChange, mobileOpen, onClose }) {
+function Inspector({ composition, selected, selectedId, onUpdate, onUpdateEvent, onDelete, onAdd, onTemplate, onSoundEffect, onRemoveSoundEffect, soundEffectAvailable, activeTab, onTabChange, mobileOpen, onClose, time, fps, onSeek }) {
   const tabs = [['content', 'Text'], ['motion', 'Motion'], ['style', 'Style'], ['audio', 'Audio'], ['project', 'Project']]
   const updateSelected = patch => selected && onUpdateEvent(selected.id, patch)
+  const keyframeTime = selected
+    ? Math.round(Math.max(0, Math.min(selected.duration, time - selected.start)) * fps) / fps
+    : 0
+  const activeKeyframe = selected?.keyframes?.find(keyframe => Math.abs(keyframe.time - keyframeTime) < 0.5 / fps)
+  const addKeyframe = () => {
+    if (!selected) return
+    const keyframe = { time: keyframeTime, easing: 'ease-in-out', ...captureKeyframeValues(selected, keyframeTime) }
+    updateSelected({ keyframes: upsertKeyframe(selected, keyframe, 0.5 / fps) })
+  }
+  const updateKeyframe = patch => {
+    if (!selected) return
+    const keyframe = { ...(activeKeyframe || { time: keyframeTime, easing: 'ease-in-out' }), ...patch, time: keyframeTime }
+    updateSelected({ keyframes: upsertKeyframe(selected, keyframe, 0.5 / fps) })
+  }
+  const removeKeyframe = () => {
+    if (selected && activeKeyframe) updateSelected({ keyframes: selected.keyframes.filter(keyframe => keyframe !== activeKeyframe) })
+  }
+  const keyframeControls = [
+    { property: 'x', label: 'HORIZONTAL', min: 0, max: 100, step: 1, unit: '%' },
+    { property: 'position', label: 'VERTICAL', min: 0, max: 100, step: 1, unit: '%' },
+    { property: 'scale', label: 'SCALE', min: 0.1, max: 3, step: 0.05, unit: '×' },
+    { property: 'rotation', label: 'ROTATION', min: -180, max: 180, step: 1, unit: '°' },
+    { property: 'opacity', label: 'OPACITY', min: 0, max: 1, step: 0.01, unit: '%' },
+    { property: 'blur', label: 'BLUR', min: 0, max: 40, step: 1, unit: 'px' },
+    { property: 'letterSpacing', label: 'TRACKING', min: 0, max: 24, step: 0.5, unit: 'px' },
+  ]
   const hasSelection = selected && selectedId
   return <aside className={`inspector ${mobileOpen ? 'mobile-open' : ''}`} aria-label="Editing controls">
     <div className="inspector-header">
@@ -891,6 +1044,25 @@ function Inspector({ composition, selected, selectedId, onUpdate, onUpdateEvent,
         <div className="tool-section-title"><span>ANIMATION STACK</span><small>Layer a subtle accent and exit</small></div>
         <div className="field-row"><label className="field-label">EMPHASIS<select value={selected.emphasis || 'none'} onChange={event => updateSelected({ emphasis: event.target.value })}>{Object.entries(EMPHASIS_ANIMATIONS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="field-label">EXIT<select value={selected.exit || 'fade'} onChange={event => updateSelected({ exit: event.target.value })}>{Object.entries(EXIT_ANIMATIONS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label></div>
         <p className="inspector-hint">Entrance, emphasis, and exit are independent, so you can combine presets into a custom motion stack.</p>
+        <div className="tool-section-title keyframe-section-title"><span>MANUAL KEYFRAMES</span><small>Animate this lyric at exact frames</small></div>
+        <div className="keyframe-toolbar">
+          <span>{formatTime(selected.start + keyframeTime)} · local {keyframeTime.toFixed(2)}s</span>
+          <button className="tiny-button" onClick={addKeyframe} disabled={(selected.keyframes || []).length >= 100 && !activeKeyframe}>◇ {activeKeyframe ? 'Update key' : 'Add key'}</button>
+          {activeKeyframe && <button className="keyframe-delete" aria-label="Delete keyframe at playhead" title="Delete keyframe" onClick={removeKeyframe}>×</button>}
+        </div>
+        {(selected.keyframes || []).length > 0 && <div className="keyframe-list" aria-label="Lyric keyframes">
+          {selected.keyframes.map(keyframe => <button key={`${keyframe.time}`} className={`keyframe-chip${activeKeyframe === keyframe ? ' active' : ''}`} onClick={() => onSeek(selected.start + keyframe.time)} title={`Seek to keyframe at ${keyframe.time.toFixed(2)} seconds`}>◇ {keyframe.time.toFixed(2)}s</button>)}
+        </div>}
+        <label className="field-label">SEGMENT EASING<select disabled={!activeKeyframe} value={activeKeyframe?.easing || 'ease-in-out'} onChange={event => updateKeyframe({ easing: event.target.value })}>{KEYFRAME_EASES.map(easing => <option key={easing} value={easing}>{easing.replaceAll('-', ' ')}</option>)}</select></label>
+        <label className="field-label">ANIMATED COLOR<div className="color-input"><input type="color" disabled={!activeKeyframe} value={getKeyframeValue(selected, 'color', keyframeTime)} onChange={event => updateKeyframe({ color: event.target.value })} /><span>{getKeyframeValue(selected, 'color', keyframeTime).toUpperCase()}</span></div></label>
+        <div className="keyframe-control-grid">
+          {keyframeControls.map(control => {
+            const value = selected ? getKeyframeValue(selected, control.property, keyframeTime) : 0
+            const display = control.property === 'opacity' ? `${Math.round(value * 100)}%` : `${Number(value.toFixed(2))}${control.unit}`
+            return <label className="field-label keyframe-control" key={control.property}>{control.label}<div className="range-field"><input type="range" min={control.min} max={control.max} step={control.step} value={value} disabled={!activeKeyframe} onChange={event => updateKeyframe({ [control.property]: Number(event.target.value) })} /><span>{display}</span></div></label>
+          })}
+        </div>
+        <p className="inspector-hint">Move the playhead inside this lyric, add a key, then adjust its properties. Keyframes interpolate smoothly in preview and export.</p>
       </> : <p className="inspector-hint">Choose a lyric block to build a custom entrance, emphasis, and exit stack.</p>}
     </div>}
 

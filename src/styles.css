@@ -61,6 +61,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .breadcrumb strong { overflow: hidden; color: #e9e6ec; font-size: 12px; font-weight: 600; text-overflow: ellipsis; }
 .draft-pill { padding: 3px 6px; border: 1px solid #4a4030; border-radius: 4px; color: var(--gold); font: 9px var(--mono); letter-spacing: .05em; }
 .top-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.history-actions { display: flex; align-items: center; gap: 4px; }
+.history-button { width: 31px; min-width: 31px; padding: 0; font: 19px/1 'DM Sans', sans-serif; }
+.history-button:disabled { cursor: default; opacity: .35; }
 .button-primary, .button-secondary { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .button-primary { border-color: #caa753; color: #17130c; background: linear-gradient(130deg, #ead18e, #d1ad5a); box-shadow: 0 2px 10px #c19c4430; }
 .button-primary:hover:not(:disabled) { background: #f2daa0; }
@@ -195,6 +198,19 @@ select, option, optgroup { color: var(--text); background-color: #16161b; }
 .delete-event { display: inline-flex; align-items: center; gap: 5px; padding: 6px 4px; border: 0; color: #a27779; background: transparent; cursor: pointer; font-size: 9px; }
 .delete-event:hover { color: #f08c91; }
 .inspector-hint { margin: 0; color: #96929d; font-size: 11px; line-height: 1.6; }
+.keyframe-section-title { margin-top: 5px; }
+.keyframe-toolbar { display: flex; align-items: center; gap: 6px; }
+.keyframe-toolbar > span { flex: 1; color: var(--gold-bright); font: 9px var(--mono); }
+.keyframe-toolbar .tiny-button:disabled { cursor: not-allowed; opacity: .45; }
+.keyframe-delete { display: grid; width: 25px; height: 25px; place-items: center; border: 1px solid #56383c; border-radius: 4px; color: #e59a9d; background: #211719; cursor: pointer; font-size: 16px; }
+.keyframe-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.keyframe-chip { padding: 4px 6px; border: 1px solid #343139; border-radius: 4px; color: #aaa5b0; background: #151419; cursor: pointer; font: 8px var(--mono); }
+.keyframe-chip:hover, .keyframe-chip.active { border-color: #81693d; color: var(--gold-bright); background: #201c15; }
+.keyframe-control-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px 9px; }
+.keyframe-control { gap: 5px; }
+.keyframe-control .range-field { gap: 5px; }
+.keyframe-control .range-field input:disabled { cursor: not-allowed; opacity: .4; }
+.keyframe-control .range-field span { min-width: 30px; font-size: 8px; }
 .comp-settings { gap: 18px; }
 .full-width { width: 100%; }
 
@@ -213,6 +229,12 @@ select, option, optgroup { color: var(--text); background-color: #16161b; }
 .ruler-label { padding-left: 20px; color: #716e78; font: 8px var(--mono); }
 .ruler-track { position: relative; height: 100%; }
 .ruler-track span { position: absolute; top: 8px; padding-left: 5px; border-left: 1px solid #343238; color: #726f79; font: 8px var(--mono); white-space: nowrap; transform: translateX(-2px); }
+.timeline-marker { position: absolute; z-index: 4; top: 1px; display: flex; height: 24px; align-items: flex-start; transform: translateX(-6px); }
+.timeline-marker-jump { position: relative; display: inline-flex; max-width: 112px; align-items: center; gap: 4px; overflow: hidden; padding: 2px 4px; border: 1px solid #6e5a35; border-radius: 3px; color: #e7d4a6; background: #211c13; cursor: pointer; font: 7px var(--mono); white-space: nowrap; }
+.timeline-marker-jump i { width: 5px; height: 5px; flex: 0 0 5px; border-radius: 50%; background: var(--gold-bright); box-shadow: 0 0 6px #d9b76280; }
+.timeline-marker-jump span { position: static; overflow: hidden; max-width: 86px; padding: 0; border: 0; color: inherit; font: inherit; text-overflow: ellipsis; transform: none; }
+.timeline-marker-remove { display: none; width: 16px; height: 17px; padding: 0; border: 1px solid #6e4549; border-radius: 2px; color: #e4a5a7; background: #28191b; cursor: pointer; line-height: 1; }
+.timeline-marker:hover .timeline-marker-remove, .timeline-marker:focus-within .timeline-marker-remove { display: block; }
 .timeline-track { min-height: 62px; }
 .track-label { display: flex; align-items: flex-start; gap: 7px; padding: 13px 0 0 18px; border-right: 1px solid #242329; color: #94909a; font: 8px var(--mono); letter-spacing: .05em; }
 .track-badge { display: grid; width: 15px; height: 15px; place-items: center; border: 1px solid #554634; border-radius: 3px; color: var(--gold); font-size: 8px; }

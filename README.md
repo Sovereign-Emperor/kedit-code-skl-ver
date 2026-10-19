@@ -35,6 +35,17 @@ The inspector is split into **Text**, **Motion**, **Style**, **Audio**, and **Pr
 
 Use **Preview only** on the canvas to open a distraction-free viewer, then choose **Fullscreen** to use the browser's fullscreen mode. The viewer keeps the same composition clock, soundtrack, and frame-accurate controls as the editor. Turn on **Guides** to check center and 10% safe-area framing before export. In preview-only mode, press **Space** to play or pause, **Left/Right Arrow** to step one frame, **F** to toggle fullscreen, and **Escape** to exit fullscreen or close the viewer.
 
+The editor keeps up to 100 undo steps per composition; use **Undo/Redo** in the header or **Ctrl+Z / Ctrl+Y** ( **Cmd** on macOS). Dragging a timeline event is treated as one undoable edit. Add named timeline markers from the **Marker** button at the current playhead; click a marker to seek, and focus it to reveal its remove control.
+
+For manual motion, select a lyric, open **Motion**, move the playhead to a frame within the lyric, and choose **Add key**. Adjust horizontal/vertical position, scale, rotation, opacity, blur, tracking, and color at that key. Add another key later in the lyric to create an interpolated move; choose the segment easing on the earlier key. Keyframe times are local to the lyric, frame-aligned, and the same animation is used by live preview and MP4 export. The JavaScript schema stores them in each event's `keyframes` array:
+
+```js
+keyframes: [
+  { time: 0, x: 50, position: 52, scale: 0.8, rotation: -4, opacity: 0, blur: 8, letterSpacing: 2, color: '#e5c268', easing: 'ease-out' },
+  { time: 0.6, x: 50, position: 52, scale: 1, rotation: 0, opacity: 1, blur: 0, letterSpacing: 0, color: '#f5f0e7' },
+]
+```
+
 Motion controls let you choose entrance, emphasis, exit, and the transition into each lyric independently, then tune entrance and transition duration. Available transitions include dissolve, directional wipes, pushes, zoom-through, and glitch. Style controls include reusable typography presets, font family and weight, highlighting, letter spacing, and horizontal/vertical placement. These settings work in preview and MP4 export.
 
 ## Code-first compositions

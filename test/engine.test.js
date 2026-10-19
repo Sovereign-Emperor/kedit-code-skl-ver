@@ -5,6 +5,7 @@ import { COMPOSITIONS, createLyric, TEMPLATES } from '../src/compositions/librar
 import { drawCompositionFrame } from '../src/engine/renderer.js'
 import { FORMATS, validateComposition } from '../src/engine/schema.js'
 import { arrangeEventsIntoLanes, calculateTimelineEdit } from '../src/engine/timeline-editing.js'
+import { getKeyframeValue, upsertKeyframe } from '../src/engine/keyframes.js'
 
 test('the example compositions meet the supported schema', () => {
   for (const composition of COMPOSITIONS) assert.equal(validateComposition(composition), null)
@@ -49,10 +50,45 @@ test('composition validation rejects an event that overruns the edit', () => {
   assert.match(validateComposition(invalid).message, /duration/)
 })
 
+test('keyframe values interpolate with selectable easing and upsert on frame boundaries', () => {
+  const event = {
+    ...createLyric(2, 4),
+    x: 20,
+    keyframes: [
+      { time: 1, x: 80, scale: 2, color: '#000000', easing: 'ease-in-out' },
+      { time: 3, x: 40, scale: 1, color: '#ffffff', easing: 'linear' },
+    ],
+  }
+  assert.equal(getKeyframeValue(event, 'x', 0), 20)
+  assert.equal(getKeyframeValue(event, 'x', 1), 80)
+  assert.equal(getKeyframeValue(event, 'x', 2), 60)
+  assert.equal(getKeyframeValue(event, 'scale', 2), 1.5)
+  assert.equal(getKeyframeValue(event, 'color', 2), '#808080')
+  const changed = upsertKeyframe(event, { time: 1.01, x: 70 }, 1 / 30)
+  assert.equal(changed.length, 2)
+  assert.equal(changed[0].x, 70)
+})
+
+test('composition validation bounds timeline markers and animated keyframe properties', () => {
+  const invalid = structuredClone(COMPOSITIONS[0])
+  invalid.markers = [{ id: 'm1', label: 'Out of range', time: invalid.duration + 1 }]
+  invalid.events[0].keyframes = [
+    { time: 0.5, scale: 8, easing: 'spring', color: 'blue' },
+    { time: 0.4, opacity: 0.5, unknown: 1 },
+  ]
+  const messages = validateComposition(invalid, { returnErrors: true }).map(error => error.message)
+  assert.ok(messages.some(message => /time must be within the composition/.test(message)))
+  assert.ok(messages.some(message => /unsupported easing/.test(message)))
+  assert.ok(messages.some(message => /scale is outside/.test(message)))
+  assert.ok(messages.some(message => /color must be a six-digit hex/.test(message)))
+  assert.ok(messages.some(message => /unique, ordered/.test(message)))
+  assert.ok(messages.some(message => /unsupported property unknown/.test(message)))
+})
+
 test('the frame renderer draws overlapping timestamped text on a canvas context', () => {
   let textDrawn = 0
   const context = {
-    clearRect() {}, fillRect() {}, save() {}, restore() {}, translate() {}, scale() {}, beginPath() {}, rect() {}, clip() {},
+    clearRect() {}, fillRect() {}, save() {}, restore() {}, translate() {}, rotate() {}, scale() {}, beginPath() {}, rect() {}, clip() {},
     fillText() { textDrawn += 1 }, measureText(text) { return { width: text.length * 20 } },
     createRadialGradient() { return { addColorStop() {} } },
     createLinearGradient() { return { addColorStop() {} } },
@@ -64,7 +100,7 @@ test('the frame renderer draws overlapping timestamped text on a canvas context'
 
 test('the renderer accepts every registered entrance preset and separate emphasis/exit styles', () => {
   const context = {
-    clearRect() {}, fillRect() {}, save() {}, restore() {}, translate() {}, scale() {}, beginPath() {}, rect() {}, clip() {},
+    clearRect() {}, fillRect() {}, save() {}, restore() {}, translate() {}, rotate() {}, scale() {}, beginPath() {}, rect() {}, clip() {},
     fillText() {}, measureText(text) { return { width: text.length * 12 } },
     createRadialGradient() { return { addColorStop() {} } },
     createLinearGradient() { return { addColorStop() {} } },
@@ -95,7 +131,7 @@ test('new lyric cards clamp to the remaining edit duration', () => {
 test('custom horizontal placement and entrance timing render at their configured values', () => {
   const translations = []
   const context = {
-    clearRect() {}, fillRect() {}, save() {}, restore() {}, scale() {}, beginPath() {}, rect() {}, clip() {},
+    clearRect() {}, fillRect() {}, save() {}, restore() {}, scale() {}, rotate() {}, beginPath() {}, rect() {}, clip() {},
     translate(x, y) { translations.push([x, y]) },
     fillText() {}, measureText(text) { return { width: text.length * 12 } },
     createRadialGradient() { return { addColorStop() {} } },
@@ -104,6 +140,36 @@ test('custom horizontal placement and entrance timing render at their configured
   const event = { ...createLyric(0), text: 'CUSTOM POSITION', animation: 'fade', x: 25, motionDuration: 0.2 }
   drawCompositionFrame(context, { ...COMPOSITIONS[0], events: [event] }, 0.1, FORMATS.vertical)
   assert.ok(translations.some(([x]) => x === 270))
+})
+
+test('renderer applies manually keyed transform, opacity, blur, and position values', () => {
+  const transforms = []
+  const context = {
+    globalAlpha: 1,
+    filter: 'none',
+    clearRect() {}, fillRect() {}, save() {}, restore() {},
+    translate(x, y) { transforms.push(['translate', x, y]) },
+    rotate(value) { transforms.push(['rotate', value]) },
+    scale(x, y) { transforms.push(['scale', x, y]) },
+    beginPath() {}, rect() {}, clip() {}, fillText() {},
+    measureText(text) { return { width: text.length * 12 } },
+    createRadialGradient() { return { addColorStop() {} } },
+    createLinearGradient() { return { addColorStop() {} } },
+  }
+  const event = {
+    ...createLyric(0, 2),
+    text: 'KEYFRAME TEST',
+    animation: 'fade',
+    entrance: 'fade',
+    motionDuration: 0.05,
+    keyframes: [{ time: 0, x: 25, position: 30, scale: 2, rotation: 90, opacity: 0.5, blur: 4, letterSpacing: 2 }],
+  }
+  drawCompositionFrame(context, { ...COMPOSITIONS[0], events: [event] }, 0.2, FORMATS.vertical)
+  assert.ok(transforms.some(([kind, x]) => kind === 'translate' && x === 270))
+  assert.ok(transforms.some(([kind, value]) => kind === 'rotate' && value === Math.PI / 2))
+  assert.ok(transforms.some(([kind, x]) => kind === 'scale' && x === 2))
+  assert.equal(context.globalAlpha, 0.5)
+  assert.equal(context.filter, 'blur(4px)')
 })
 
 test('composition validation rejects malformed highlight and effect gain data', () => {
@@ -128,7 +194,7 @@ test('every transition preset renders overlapping outgoing and incoming lyric ca
   let clipCount = 0
   let drawCount = 0
   const context = {
-    clearRect() {}, fillRect() {}, save() {}, restore() {}, translate() {}, scale() {}, beginPath() {}, rect() {}, clip() { clipCount += 1 },
+    clearRect() {}, fillRect() {}, save() {}, restore() {}, translate() {}, rotate() {}, scale() {}, beginPath() {}, rect() {}, clip() { clipCount += 1 },
     fillText() { drawCount += 1 }, measureText(text) { return { width: text.length * 12 } },
     createRadialGradient() { return { addColorStop() {} } },
     createLinearGradient() { return { addColorStop() {} } },

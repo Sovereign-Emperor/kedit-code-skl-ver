@@ -1,4 +1,5 @@
 import { ANIMATIONS, TRANSITIONS, resolveEase } from './animations.js'
+import { getKeyframeValue } from './keyframes.js'
 
 const clamp = value => Math.max(0, Math.min(1, value))
 const rgb = color => color
@@ -62,17 +63,25 @@ function drawEvent(ctx, composition, event, time, width, height, events, index) 
   const exitWindow = Math.min(0.22, event.duration * 0.15)
   const exitProgress = clamp((elapsed - (event.duration - exitWindow)) / exitWindow)
   const exitStyle = event.exit ?? 'fade'
-  const opacity = Math.min(1, entrance * 1.15) * (exitStyle === 'fade' ? 1 - exitProgress : 1)
+  const keyX = getKeyframeValue(event, 'x', elapsed)
+  const keyPosition = getKeyframeValue(event, 'position', elapsed)
+  const keyScale = getKeyframeValue(event, 'scale', elapsed)
+  const keyRotation = getKeyframeValue(event, 'rotation', elapsed)
+  const keyOpacity = getKeyframeValue(event, 'opacity', elapsed)
+  const keyBlur = getKeyframeValue(event, 'blur', elapsed)
+  const keyLetterSpacing = getKeyframeValue(event, 'letterSpacing', elapsed)
+  const keyColor = getKeyframeValue(event, 'color', elapsed)
+  const opacity = Math.min(1, entrance * 1.15) * (exitStyle === 'fade' ? 1 - exitProgress : 1) * keyOpacity
   const scale = width / 1080
   const fontSize = Math.min(event.fontSize * scale, width * 0.22)
-  const position = event.position ?? 52
+  const position = keyPosition
   const movement = preset.movement
   let alpha = opacity
   let yOffset = (1 - entrance) * fontSize * 0.32
   let xOffset = movement === 'slide' ? (1 - entrance) * width * 0.16 : 0
   let zoom = 1
-  let blur = 0
-  let tracking = movement === 'tracking' ? (1 - entrance) * fontSize * 0.32 : 0
+  let blur = keyBlur
+  let tracking = (movement === 'tracking' ? (1 - entrance) * fontSize * 0.32 : 0) + keyLetterSpacing
   let revealMode = ''
   const transitionProgress = incoming ? clamp((time - event.start) / transitionDuration) : 1
   const outgoingProgress = outgoing ? clamp((time - next.start) / nextDuration) : 0
@@ -121,13 +130,14 @@ function drawEvent(ctx, composition, event, time, width, height, events, index) 
 
   ctx.save()
   ctx.globalAlpha = clamp(alpha)
-  ctx.translate(width * (event.x ?? 50) / 100 + xOffset, height * position / 100 + yOffset)
-  ctx.scale(zoom, zoom)
+  ctx.translate(width * keyX / 100 + xOffset, height * position / 100 + yOffset)
+  ctx.rotate(keyRotation * Math.PI / 180)
+  ctx.scale(zoom * keyScale, zoom * keyScale)
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
   ctx.font = `${event.fontWeight || 800} ${fontSize}px "${event.font || 'Arial'}", sans-serif`
   ctx.filter = blur ? `blur(${blur}px)` : 'none'
-  ctx.shadowColor = `${event.color}99`
+  ctx.shadowColor = `${keyColor}99`
   ctx.shadowBlur = fontSize * (0.16 + (event.emphasis === 'glow' ? emphasisPulse * 0.24 : 0))
   const maxWidth = width * (event.align === 'center' ? 0.84 : 0.74)
   const lines = wrapText(ctx, event.text, maxWidth)
@@ -167,14 +177,14 @@ function drawEvent(ctx, composition, event, time, width, height, events, index) 
         const chars = Array.from(visibleLine)
         const totalWidth = chars.reduce((sum, char) => sum + ctx.measureText(char).width + tracking, -tracking)
         let cursor = -totalWidth / 2
-        ctx.fillStyle = rgb(event.color)
+        ctx.fillStyle = rgb(keyColor)
         for (const char of chars) {
           ctx.fillText(char, cursor + ctx.measureText(char).width / 2, lineY + index * lineHeight)
           cursor += ctx.measureText(char).width + tracking
         }
       } else {
         const widthOfLine = ctx.measureText(visibleLine).width
-        drawStyledLine(ctx, visibleLine, -widthOfLine / 2, lineY + index * lineHeight, words, event.color, composition.accent || '#e5c268', event.letterSpacing || 0)
+        drawStyledLine(ctx, visibleLine, -widthOfLine / 2, lineY + index * lineHeight, words, keyColor, composition.accent || '#e5c268', tracking)
       }
     } else {
       ctx.textAlign = event.align
@@ -182,7 +192,7 @@ function drawEvent(ctx, composition, event, time, width, height, events, index) 
       const startX = event.align === 'left'
         ? (event.x === undefined ? -width * 0.38 : 0)
         : (event.x === undefined ? width * 0.38 - measure : -measure)
-      drawStyledLine(ctx, visibleLine, startX, lineY + index * lineHeight, words, event.color, composition.accent || '#e5c268', event.letterSpacing || 0)
+      drawStyledLine(ctx, visibleLine, startX, lineY + index * lineHeight, words, keyColor, composition.accent || '#e5c268', tracking)
     }
     ctx.restore()
   })
