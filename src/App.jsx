@@ -43,6 +43,8 @@ function Icon({ name, size = 18 }) {
     settings: <><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" /><path d="m19.4 15 .1.1 1.1.9-1.2 2.1-1.4-.5a8 8 0 0 1-1.6.9l-.3 1.5h-2.4l-.3-1.5a8 8 0 0 1-1.6-.9l-1.4.5-1.2-2.1 1.1-.9a8 8 0 0 1 0-1.9l-1.1-.9 1.2-2.1 1.4.5a8 8 0 0 1 1.6-.9l.3-1.5h2.4l.3 1.5a8 8 0 0 1 1.6.9l1.4-.5 1.2 2.1-1.1.9a8 8 0 0 1-.1 1.9Z" transform="translate(-1 -1)" /></>,
     trash: <><path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" /></>,
     check: <path d="m5 12 4 4L19 6" />,
+    expand: <><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5" /><path d="m3 3 6 6m12-6-6 6M3 21l6-6m12 6-6-6" /></>,
+    frame: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M7 3v18m10-18v18M3 7h18M3 17h18" /></>,
   }
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
 }
@@ -87,6 +89,7 @@ function App() {
   })
   const [selectedId, setSelectedId] = useState(composition.events[0]?.id ?? null)
   const [time, setTime] = useState(0)
+  const timeRef = useRef(time)
   const [playing, setPlaying] = useState(false)
   const [notice, setNotice] = useState('')
   const [renderState, setRenderState] = useState({ status: 'idle', progress: 0, error: '' })
@@ -98,8 +101,14 @@ function App() {
   const [inspectorTab, setInspectorTab] = useState('content')
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false)
   const [compositionPickerOpen, setCompositionPickerOpen] = useState(false)
+  const [previewOnly, setPreviewOnly] = useState(false)
+  const [previewFullscreen, setPreviewFullscreen] = useState(false)
+  const [safeGuides, setSafeGuides] = useState(false)
   const audioRef = useRef(null)
   const canvasRef = useRef(null)
+  const previewSurfaceRef = useRef(null)
+  const previewOpenButtonRef = useRef(null)
+  const previewCloseButtonRef = useRef(null)
   const controllerRef = useRef(null)
   const importRef = useRef(null)
   const soundEffectsRef = useRef([])
@@ -110,6 +119,7 @@ function App() {
   const previousTimeRef = useRef(0)
   const compositionRef = useRef(composition)
   compositionRef.current = composition
+  timeRef.current = time
   const selected = composition.events.find(event => event.id === selectedId) ?? composition.events[0]
   const sortedEvents = useMemo(() => [...composition.events].sort((a, b) => a.start - b.start), [composition.events])
   const lyricLanes = useMemo(() => arrangeEventsIntoLanes(sortedEvents), [sortedEvents])
@@ -271,6 +281,76 @@ function App() {
     try { await controllerRef.current?.toggle() }
     catch (error) { setNotice(`Playback error: ${error.message}`) }
   }
+  const togglePreviewFullscreen = useCallback(async () => {
+    try {
+      if (document.fullscreenElement === previewSurfaceRef.current) await document.exitFullscreen()
+      else if (!previewSurfaceRef.current?.requestFullscreen) throw new Error('Fullscreen viewing is not supported in this browser.')
+      else await previewSurfaceRef.current.requestFullscreen()
+    } catch (error) {
+      setNotice(`Could not change fullscreen mode: ${error.message}`)
+    }
+  }, [])
+  const closePreviewOnly = useCallback(() => {
+    if (document.fullscreenElement === previewSurfaceRef.current) {
+      document.exitFullscreen().catch(error => setNotice(`Could not exit fullscreen: ${error.message}`))
+    }
+    setPreviewOnly(false)
+  }, [])
+
+  useEffect(() => {
+    const syncFullscreenState = () => setPreviewFullscreen(document.fullscreenElement === previewSurfaceRef.current)
+    document.addEventListener('fullscreenchange', syncFullscreenState)
+    return () => document.removeEventListener('fullscreenchange', syncFullscreenState)
+  }, [])
+
+  useEffect(() => {
+    if (!previewOnly) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    previewCloseButtonRef.current?.focus()
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.requestAnimationFrame(() => previewOpenButtonRef.current?.focus())
+    }
+  }, [previewOnly])
+
+  useEffect(() => {
+    if (!previewOnly) return undefined
+    const onKeyDown = event => {
+      if (event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (event.code === 'Space') {
+        event.preventDefault()
+        controllerRef.current?.toggle().catch(error => setNotice(`Playback error: ${error.message}`))
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault()
+        const nextTime = Math.max(0, Math.min(compositionRef.current.duration, timeRef.current + (event.key === 'ArrowLeft' ? -1 : 1) / compositionRef.current.fps))
+        controllerRef.current?.seek(nextTime)
+        setTime(nextTime)
+      } else if (event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        togglePreviewFullscreen()
+      } else if (event.key === 'Escape') {
+        if (document.fullscreenElement === previewSurfaceRef.current) {
+          event.preventDefault()
+          document.exitFullscreen().catch(error => setNotice(`Could not exit fullscreen: ${error.message}`))
+        } else closePreviewOnly()
+      } else if (event.key === 'Tab') {
+        const focusable = [...previewSurfaceRef.current.querySelectorAll('button:not(:disabled), input:not(:disabled)')]
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last?.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first?.focus()
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [previewOnly, closePreviewOnly, togglePreviewFullscreen])
+
   const addEvent = () => {
     const start = Math.min(Math.max(0, time), Math.max(0, composition.duration - 0.5))
     const event = createLyric(start, Math.min(2.5, composition.duration - start))
@@ -531,8 +611,8 @@ function App() {
   }
 
   return (
-    <div className="studio">
-      <aside className="sidebar">
+    <div className={`studio${previewOnly ? ' preview-focused' : ''}`}>
+      <aside className="sidebar" inert={previewOnly ? '' : undefined} aria-hidden={previewOnly}>
         <a className="brand" href="#" aria-label="KEDIT Studio home"><span className="brand-mark"><Icon name="spark" size={21} /></span><span>KEDIT<span className="brand-light">STUDIO</span></span></a>
         <div className="workspace-label">WORKSPACE</div>
         <button className={`nav-item ${view === 'editor' ? 'active' : ''}`} title="Editor" onClick={() => setView('editor')}><Icon name="layers" /> Editor</button>
@@ -553,7 +633,7 @@ function App() {
         <div className="sidebar-bottom"><span className="status-dot" /> All changes saved locally</div>
       </aside>
 
-      <main className="main">
+      <main className="main" inert={previewOnly ? '' : undefined} aria-hidden={previewOnly}>
         <header className="topbar">
           <div className="breadcrumb"><span>Workspace</span><Icon name="right" size={14} /><strong>{composition.title || 'Untitled edit'}</strong><span className="draft-pill">DRAFT</span></div>
           <div className="composition-picker-wrap">
@@ -605,10 +685,14 @@ function App() {
 
             {view === 'templates' ? <TemplateGallery onChoose={id => { chooseTemplate(id); setView('editor') }} /> : (
               <div className="stage-wrap">
-                <div className={`stage stage-${composition.format}`}>
+                <div className={`stage stage-${composition.format}${safeGuides ? ' stage-guides' : ''}`}>
                   <CanvasPreview composition={composition} time={time} onCanvas={onCanvas} />
                   <div className="stage-top"><span><i /> LIVE PREVIEW</span><span>{FORMATS[composition.format].width} × {FORMATS[composition.format].height}</span></div>
-                  <div className="stage-grid" aria-hidden="true"><span /><span /><span /></div>
+                  {safeGuides && <div className="stage-guides-overlay" aria-hidden="true"><span className="guide-safe-frame" /><span className="guide-center-vertical" /><span className="guide-center-horizontal" /></div>}
+                  <div className="stage-actions">
+                    <button className={`stage-tool-button${safeGuides ? ' active' : ''}`} aria-label={safeGuides ? 'Hide safe area guides' : 'Show safe area guides'} aria-pressed={safeGuides} title="Safe area guides" onClick={() => setSafeGuides(value => !value)}><Icon name="frame" size={15} /></button>
+                    <button ref={previewOpenButtonRef} className="stage-tool-button" aria-label="Open preview-only view" title="Preview only" onClick={() => setPreviewOnly(true)}><Icon name="expand" size={15} /><span>Preview only</span></button>
+                  </div>
                 </div>
                 <div className="transport">
                   <div className="transport-left"><button className="transport-icon" aria-label="Jump to beginning" onClick={() => seek(0)}>↤</button><button className="play-button" aria-label={playing ? 'Pause preview' : 'Play preview'} onClick={togglePlayback}><Icon name={playing ? 'pause' : 'play'} size={16} /></button><button className="transport-icon" aria-label="Jump to end" onClick={() => seek(composition.duration)}>↦</button></div>
@@ -701,6 +785,44 @@ function App() {
           </form>
         </div>}
       </main>
+      {previewOnly && <section
+        className={`preview-focus${previewFullscreen ? ' preview-focus-fullscreen' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Preview-only viewer"
+        ref={previewSurfaceRef}
+      >
+        <header className="preview-focus-header">
+          <div className="preview-focus-project">
+            <span className="eyebrow">KEDIT STUDIO · PREVIEW</span>
+            <strong>{composition.title || 'Untitled edit'}</strong>
+            <span>{FORMATS[composition.format].width} × {FORMATS[composition.format].height} · {fps} FPS</span>
+          </div>
+          <div className="preview-focus-actions">
+            <button className={`focus-tool-button${safeGuides ? ' active' : ''}`} aria-label={safeGuides ? 'Hide safe area guides' : 'Show safe area guides'} aria-pressed={safeGuides} onClick={() => setSafeGuides(value => !value)}><Icon name="frame" size={16} /><span>Guides</span></button>
+            <button className="focus-tool-button" aria-label={previewFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={togglePreviewFullscreen}><Icon name="expand" size={16} /><span>{previewFullscreen ? 'Exit fullscreen' : 'Fullscreen'}</span></button>
+            <button ref={previewCloseButtonRef} className="focus-close-button" aria-label="Close preview-only view" onClick={closePreviewOnly}><Icon name="close" size={18} /><span>Close</span></button>
+          </div>
+        </header>
+        <div className="focus-stage-wrap">
+          <div className={`stage focus-stage stage-${composition.format}${safeGuides ? ' stage-guides' : ''}`}>
+            <CanvasPreview composition={composition} time={time} onCanvas={() => {}} />
+            {safeGuides && <div className="stage-guides-overlay" aria-hidden="true"><span className="guide-safe-frame" /><span className="guide-center-vertical" /><span className="guide-center-horizontal" /></div>}
+          </div>
+        </div>
+        <div className="focus-transport">
+          <div className="focus-transport-controls">
+            <button className="transport-icon" aria-label="Jump to beginning" onClick={() => seek(0)}>↤</button>
+            <button className="transport-icon focus-frame-step" aria-label="Previous frame" title="Previous frame (←)" onClick={() => seek(Math.max(0, time - 1 / fps))}>|◀</button>
+            <button className="play-button" aria-label={playing ? 'Pause preview' : 'Play preview'} onClick={togglePlayback}><Icon name={playing ? 'pause' : 'play'} size={17} /></button>
+            <button className="transport-icon focus-frame-step" aria-label="Next frame" title="Next frame (→)" onClick={() => seek(Math.min(composition.duration, time + 1 / fps))}>▶|</button>
+            <button className="transport-icon" aria-label="Jump to end" onClick={() => seek(composition.duration)}>↦</button>
+          </div>
+          <span className="focus-timecode">{formatTime(time)} <span>/ {formatTime(composition.duration)}</span></span>
+          <input className="transport-scrub" aria-label="Seek preview" type="range" min="0" max={composition.duration} step={1 / fps} value={Math.min(time, composition.duration)} onChange={event => seek(Number(event.target.value))} />
+        </div>
+        <footer className="preview-focus-hints"><span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Step frame</span><span><kbd>F</kbd> Fullscreen</span><span><kbd>Esc</kbd> Exit / close</span></footer>
+      </section>}
     </div>
   )
 }
